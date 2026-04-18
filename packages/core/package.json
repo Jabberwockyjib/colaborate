@@ -1,0 +1,42 @@
+{
+  "name": "@colaborate/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared types and schema definitions for @colaborate packages",
+  "type": "module",
+  "sideEffects": false,
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./src/index.ts"
+    },
+    "./testing": {
+      "default": "./src/testing.ts"
+    }
+  },
+  "author": "Develotype <bdoud@develotype.com>",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "homepage": "https://github.com/develotype/colaborate",
+  "bugs": {
+    "url": "https://github.com/develotype/colaborate/issues"
+  },
+  "keywords": [
+    "colaborate",
+    "types",
+    "schema",
+    "feedback"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/develotype/colaborate.git",
+    "directory": "packages/core"
+  }
+}

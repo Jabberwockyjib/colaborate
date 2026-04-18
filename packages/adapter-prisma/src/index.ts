@@ -1,0 +1,510 @@
+import { timingSafeEqual } from "node:crypto";
+import {
+  type ColaborateStore,
+  type FeedbackCreateInput,
+  type FeedbackQuery,
+  type FeedbackRecord,
+  type FeedbackUpdateInput,
+  flattenAnnotation,
+  isStoreDuplicate,
+  isStoreNotFound,
+} from "@colaborate/core";
+import {
+  feedbackCreateSchema,
+  feedbackDeleteSchema,
+  feedbackPatchSchema,
+  formatValidationErrors,
+  getQuerySchema,
+} from "./validation.js";
+
+export type { ColaborateStore } from "@colaborate/core";
+export { flattenAnnotation, StoreDuplicateError, StoreNotFoundError } from "@colaborate/core";
+export type {
+  FeedbackCreateInput as FeedbackCreateSchemaInput,
+  FeedbackDeleteInput,
+  FeedbackPatchInput,
+  GetQueryInput,
+} from "./validation.js";
+
+// ---------------------------------------------------------------------------
+// Minimal PrismaClient shape expected by this adapter
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal Prisma client shape expected by this adapter.
+ * Consumers pass their own `PrismaClient` instance at runtime — this interface
+ * defines the subset of methods the adapter actually uses, so it can be
+ * referenced in handler option types without importing `@prisma/client`.
+ */
+export interface ColaboratePrismaClient {
+  colaborateFeedback: {
+    create: (args: unknown) => Promise<unknown>;
+    findMany: (args: unknown) => Promise<unknown[]>;
+    findUnique: (args: unknown) => Promise<unknown | null>;
+    update: (args: unknown) => Promise<unknown>;
+    delete: (args: unknown) => Promise<unknown>;
+    deleteMany: (args: unknown) => Promise<unknown>;
+    count: (args: unknown) => Promise<number>;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// PrismaStore — ColaborateStore implementation backed by Prisma
+// ---------------------------------------------------------------------------
+
+const INCLUDE_ANNOTATIONS = { annotations: true };
+
+/**
+ * Prisma-backed implementation of `ColaborateStore`.
+ *
+ * Wraps a PrismaClient to satisfy the abstract store interface.
+ */
+export class PrismaStore implements ColaborateStore {
+  /** @internal */
+  private prisma: ColaboratePrismaClient;
+
+  constructor(prisma: ColaboratePrismaClient) {
+    this.prisma = prisma;
+  }
+
+  async createFeedback(data: FeedbackCreateInput): Promise<FeedbackRecord> {
+    return (await this.prisma.colaborateFeedback.create({
+      data: {
+        projectName: data.projectName,
+        type: data.type,
+        message: data.message,
+        status: data.status,
+        url: data.url,
+        viewport: data.viewport,
+        userAgent: data.userAgent,
+        authorName: data.authorName,
+        authorEmail: data.authorEmail,
+        clientId: data.clientId,
+        annotations: {
+          create: data.annotations.map((ann) => ({
+            cssSelector: ann.cssSelector,
+            xpath: ann.xpath,
+            textSnippet: ann.textSnippet,
+            elementTag: ann.elementTag,
+            elementId: ann.elementId,
+            textPrefix: ann.textPrefix,
+            textSuffix: ann.textSuffix,
+            fingerprint: ann.fingerprint,
+            neighborText: ann.neighborText,
+            xPct: ann.xPct,
+            yPct: ann.yPct,
+            wPct: ann.wPct,
+            hPct: ann.hPct,
+            scrollX: ann.scrollX,
+            scrollY: ann.scrollY,
+            viewportW: ann.viewportW,
+            viewportH: ann.viewportH,
+            devicePixelRatio: ann.devicePixelRatio,
+          })),
+        },
+      },
+      include: INCLUDE_ANNOTATIONS,
+    })) as FeedbackRecord;
+  }
+
+  async findByClientId(clientId: string): Promise<FeedbackRecord | null> {
+    return (await this.prisma.colaborateFeedback.findUnique({
+      where: { clientId },
+      include: INCLUDE_ANNOTATIONS,
+    })) as FeedbackRecord | null;
+  }
+
+  async getFeedbacks(query: FeedbackQuery): Promise<{ feedbacks: FeedbackRecord[]; total: number }> {
+    const { projectName, type, status, search, page = 1, limit = 50 } = query;
+
+    const where: Record<string, unknown> = { projectName };
+    if (type) where.type = type;
+    if (status) where.status = status;
+    if (search) where.message = { contains: search, mode: "insensitive" as const };
+
+    const [feedbacks, total] = await Promise.all([
+      this.prisma.colaborateFeedback.findMany({
+        where,
+        include: INCLUDE_ANNOTATIONS,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.colaborateFeedback.count({ where }),
+    ]);
+
+    return { feedbacks: feedbacks as FeedbackRecord[], total };
+  }
+
+  async updateFeedback(id: string, data: FeedbackUpdateInput): Promise<FeedbackRecord> {
+    return (await this.prisma.colaborateFeedback.update({
+      where: { id },
+      data: {
+        status: data.status,
+        resolvedAt: data.resolvedAt,
+      },
+      include: INCLUDE_ANNOTATIONS,
+    })) as FeedbackRecord;
+  }
+
+  async deleteFeedback(id: string): Promise<void> {
+    await this.prisma.colaborateFeedback.delete({ where: { id } });
+  }
+
+  async deleteAllFeedbacks(projectName: string): Promise<void> {
+    await this.prisma.colaborateFeedback.deleteMany({ where: { projectName } });
+  }
+
+  /**
+   * Verify that a feedback record with `id` belongs to `projectName`.
+   * Returns `true` when the record exists and matches, `false` otherwise.
+   */
+  async verifyProjectOwnership(id: string, projectName: string): Promise<boolean> {
+    const record = (await this.prisma.colaborateFeedback.findUnique({
+      where: { id },
+      // Only need projectName for the check — skip annotations
+    })) as { projectName: string } | null;
+    return record !== null && record.projectName === projectName;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Handler options — backwards compatible
+// ---------------------------------------------------------------------------
+
+export interface HandlerOptions {
+  /** Prisma client — used when `store` is not provided. Wrapped in a `PrismaStore` internally. */
+  prisma?: ColaboratePrismaClient;
+  /** Abstract store — when provided, takes precedence over `prisma`. */
+  store?: ColaborateStore;
+  /**
+   * Optional API key for bearer-token authentication.
+   *
+   * - **When set:** every request not listed in `publicEndpoints` must include an
+   *   `Authorization: Bearer {apiKey}` header. Requests without a valid token
+   *   receive a 401 Unauthorized response.
+   * - **When not set:** the API is fully public — anyone can create, read,
+   *   update, and delete feedbacks (including destructive DELETE operations).
+   * - **Recommendation:** always set `apiKey` in production environments.
+   */
+  apiKey?: string | undefined;
+  /**
+   * HTTP methods that don't require API key authentication.
+   * Defaults to `['POST', 'OPTIONS']` when `apiKey` is set — POST must stay open
+   * because the browser widget submits feedback from unauthenticated contexts.
+   */
+  publicEndpoints?: Array<"GET" | "POST" | "PATCH" | "DELETE" | "OPTIONS">;
+  /** Allowed CORS origins — when set, validates the Origin header */
+  allowedOrigins?: string[] | undefined;
+}
+
+/**
+ * Object returned by `createColaborateHandler` — one handler per HTTP method.
+ */
+export interface ColaborateHandler {
+  OPTIONS: (request: Request) => Response;
+  POST: (request: Request) => Promise<Response>;
+  GET: (request: Request) => Promise<Response>;
+  PATCH: (request: Request) => Promise<Response>;
+  DELETE: (request: Request) => Promise<Response>;
+}
+
+// ---------------------------------------------------------------------------
+// CORS helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build CORS headers for a given request.
+ * When `allowedOrigins` is set, only matching origins get reflected.
+ * When unset, no CORS headers are added (no permissive wildcard by default).
+ */
+function buildCorsHeaders(request: Request, allowedOrigins: string[] | undefined): Record<string, string> {
+  if (!allowedOrigins) return {};
+
+  const origin = request.headers.get("Origin");
+  if (!origin) return {};
+
+  if (!allowedOrigins.includes(origin)) return {};
+
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Max-Age": "86400",
+    Vary: "Origin",
+  };
+}
+
+/**
+ * Attach CORS headers to an existing Response.
+ */
+function withCors(response: Response, corsHeaders: Record<string, string>): Response {
+  for (const [key, value] of Object.entries(corsHeaders)) {
+    response.headers.set(key, value);
+  }
+  return response;
+}
+
+// ---------------------------------------------------------------------------
+// Handler factory
+// ---------------------------------------------------------------------------
+
+/**
+ * Perform a constant-time string comparison to prevent timing attacks on API key validation.
+ * Returns `false` immediately when lengths differ (unavoidable length leak), but the
+ * byte-level comparison itself is timing-safe.
+ */
+function safeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
+/**
+ * Create request handlers for the Colaborate API endpoint.
+ *
+ * Accepts either a `store` (abstract) or a `prisma` client (backwards compatible).
+ * When `prisma` is provided without `store`, it is wrapped in a `PrismaStore`.
+ *
+ * **Rate limiting** is not handled by this library. Apply rate limiting at the
+ * framework or reverse-proxy level (e.g. Next.js middleware, Nginx, Cloudflare).
+ * The POST endpoint in particular should be rate-limited to prevent abuse, since
+ * the widget typically calls it from unauthenticated browser contexts.
+ *
+ * @example Next.js App Router — `app/api/colaborate/route.ts`
+ * ```ts
+ * import { createColaborateHandler } from '@colaborate/adapter-prisma'
+ * import { prisma } from '@/lib/prisma'
+ *
+ * export const { GET, POST, PATCH, DELETE, OPTIONS } = createColaborateHandler({ prisma })
+ * ```
+ *
+ * @example With abstract store
+ * ```ts
+ * import { createColaborateHandler, PrismaStore } from '@colaborate/adapter-prisma'
+ * import { prisma } from '@/lib/prisma'
+ *
+ * const store = new PrismaStore(prisma)
+ * export const { GET, POST, PATCH, DELETE, OPTIONS } = createColaborateHandler({ store })
+ * ```
+ */
+export function createColaborateHandler({
+  prisma,
+  store: providedStore,
+  apiKey,
+  publicEndpoints = apiKey ? ["POST", "OPTIONS"] : undefined,
+  allowedOrigins,
+}: HandlerOptions): ColaborateHandler {
+  if (!providedStore && !prisma) {
+    throw new Error("[colaborate] createColaborateHandler requires either `store` or `prisma`.");
+  }
+
+  // Safe: the throw above guarantees at least one is defined
+  const store: ColaborateStore = providedStore ?? new PrismaStore(prisma as NonNullable<typeof prisma>);
+
+  const publicMethods = publicEndpoints ? new Set(publicEndpoints) : null;
+
+  /** Verify Bearer token when apiKey is configured. Skips methods listed in `publicEndpoints`. */
+  function authenticate(request: Request, method: string): Response | null {
+    if (!apiKey) return null;
+    if (publicMethods?.has(method as "GET" | "POST" | "PATCH" | "DELETE" | "OPTIONS")) return null;
+    const header = request.headers.get("Authorization");
+    if (!header || !safeCompare(header, `Bearer ${apiKey}`)) {
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    return null;
+  }
+
+  return {
+    /**
+     * CORS preflight handler. In production, always configure `allowedOrigins`
+     * to restrict which domains can make cross-origin requests to the API.
+     * Without it, no CORS headers are emitted and browsers will block widget requests.
+     */
+    OPTIONS: (request: Request): Response => {
+      const corsHeaders = buildCorsHeaders(request, allowedOrigins);
+      return new Response(null, { status: 204, headers: corsHeaders });
+    },
+
+    POST: async (request: Request): Promise<Response> => {
+      const corsHeaders = buildCorsHeaders(request, allowedOrigins);
+      const authError = authenticate(request, "POST");
+      if (authError) return withCors(authError, corsHeaders);
+      const body = await request.json().catch(() => null);
+      if (!body) {
+        return withCors(Response.json({ error: "Invalid JSON" }, { status: 400 }), corsHeaders);
+      }
+
+      const parsed = feedbackCreateSchema.safeParse(body);
+      if (!parsed.success) {
+        return withCors(Response.json({ errors: formatValidationErrors(parsed.error) }, { status: 400 }), corsHeaders);
+      }
+
+      const data = parsed.data;
+
+      // Defense-in-depth: enforce annotation limit at handler level in addition to schema validation
+      if (data.annotations.length > 50) {
+        return withCors(Response.json({ error: "Too many annotations (max 50)" }, { status: 400 }), corsHeaders);
+      }
+
+      try {
+        const feedback = await store.createFeedback({
+          projectName: data.projectName,
+          type: data.type,
+          message: data.message,
+          status: "open",
+          url: data.url,
+          viewport: data.viewport,
+          userAgent: data.userAgent,
+          authorName: data.authorName,
+          authorEmail: data.authorEmail,
+          clientId: data.clientId,
+          annotations: data.annotations.map(flattenAnnotation),
+        });
+
+        return withCors(Response.json(feedback, { status: 201 }), corsHeaders);
+      } catch (error) {
+        // Handle unique constraint violation (clientId dedup)
+        if (isStoreDuplicate(error)) {
+          const existing = await store.findByClientId(data.clientId);
+          if (existing) return withCors(Response.json(existing, { status: 201 }), corsHeaders);
+        }
+
+        const message = actionableErrorMessage(error);
+        console.error("[colaborate] Failed to create feedback:", error);
+        return withCors(Response.json({ error: message }, { status: 500 }), corsHeaders);
+      }
+    },
+
+    GET: async (request: Request): Promise<Response> => {
+      const corsHeaders = buildCorsHeaders(request, allowedOrigins);
+      const authError = authenticate(request, "GET");
+      if (authError) return withCors(authError, corsHeaders);
+
+      const url = new URL(request.url);
+      const rawQuery: Record<string, unknown> = {};
+      for (const key of ["projectName", "page", "limit", "type", "status", "search"]) {
+        const val = url.searchParams.get(key);
+        if (val !== null) rawQuery[key] = val;
+      }
+
+      const parsed = getQuerySchema.safeParse(rawQuery);
+      if (!parsed.success) {
+        return withCors(Response.json({ errors: formatValidationErrors(parsed.error) }, { status: 400 }), corsHeaders);
+      }
+
+      try {
+        const result = await store.getFeedbacks(parsed.data);
+        return withCors(Response.json(result, { headers: { "Cache-Control": "private, max-age=5" } }), corsHeaders);
+      } catch (error) {
+        const message = actionableErrorMessage(error);
+        console.error("[colaborate] Failed to fetch feedbacks:", error);
+        return withCors(Response.json({ error: message }, { status: 500 }), corsHeaders);
+      }
+    },
+
+    PATCH: async (request: Request): Promise<Response> => {
+      const corsHeaders = buildCorsHeaders(request, allowedOrigins);
+      const authError = authenticate(request, "PATCH");
+      if (authError) return withCors(authError, corsHeaders);
+
+      const body = await request.json().catch(() => null);
+      if (!body) {
+        return withCors(Response.json({ error: "Invalid JSON" }, { status: 400 }), corsHeaders);
+      }
+
+      const parsed = feedbackPatchSchema.safeParse(body);
+      if (!parsed.success) {
+        return withCors(Response.json({ errors: formatValidationErrors(parsed.error) }, { status: 400 }), corsHeaders);
+      }
+
+      try {
+        // Scope update to the specified project — the store finds by id, but we verify
+        // ownership by checking projectName on the returned record.
+        const feedback = await store.updateFeedback(parsed.data.id, {
+          status: parsed.data.status,
+          resolvedAt: parsed.data.status === "resolved" ? new Date() : null,
+        });
+
+        if (feedback.projectName !== parsed.data.projectName) {
+          return withCors(Response.json({ error: "Feedback not found" }, { status: 404 }), corsHeaders);
+        }
+
+        return withCors(Response.json(feedback), corsHeaders);
+      } catch (error) {
+        if (isStoreNotFound(error)) {
+          return withCors(Response.json({ error: "Feedback not found" }, { status: 404 }), corsHeaders);
+        }
+        const message = actionableErrorMessage(error);
+        console.error("[colaborate] Failed to update feedback:", error);
+        return withCors(Response.json({ error: message }, { status: 500 }), corsHeaders);
+      }
+    },
+
+    DELETE: async (request: Request): Promise<Response> => {
+      const corsHeaders = buildCorsHeaders(request, allowedOrigins);
+      const authError = authenticate(request, "DELETE");
+      if (authError) return withCors(authError, corsHeaders);
+
+      const body = await request.json().catch(() => null);
+      if (!body) {
+        return withCors(Response.json({ error: "Invalid JSON" }, { status: 400 }), corsHeaders);
+      }
+
+      const parsed = feedbackDeleteSchema.safeParse(body);
+      if (!parsed.success) {
+        return withCors(Response.json({ errors: formatValidationErrors(parsed.error) }, { status: 400 }), corsHeaders);
+      }
+
+      try {
+        if ("deleteAll" in parsed.data) {
+          await store.deleteAllFeedbacks(parsed.data.projectName);
+          return withCors(Response.json({ deleted: true }), corsHeaders);
+        }
+
+        // Verify project ownership before deleting — PrismaStore can do a
+        // lightweight findUnique check; for other store implementations the
+        // projectName in the schema is still validated but the DB-level check
+        // is skipped (the store itself should enforce isolation).
+        if (store instanceof PrismaStore) {
+          const owns = await store.verifyProjectOwnership(parsed.data.id, parsed.data.projectName);
+          if (!owns) {
+            return withCors(Response.json({ error: "Feedback not found" }, { status: 404 }), corsHeaders);
+          }
+        }
+
+        await store.deleteFeedback(parsed.data.id);
+        return withCors(Response.json({ deleted: true }), corsHeaders);
+      } catch (error) {
+        if (isStoreNotFound(error)) {
+          return withCors(Response.json({ error: "Feedback not found" }, { status: 404 }), corsHeaders);
+        }
+        const message = actionableErrorMessage(error);
+        console.error("[colaborate] Failed to delete feedback:", error);
+        return withCors(Response.json({ error: message }, { status: 500 }), corsHeaders);
+      }
+    },
+  };
+}
+
+function isTableNotFoundError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code: string }).code === "P2021";
+}
+
+/**
+ * Return an actionable error message for known Prisma error codes.
+ * Falls back to a generic message for unknown errors.
+ */
+function actionableErrorMessage(error: unknown): string {
+  if (isTableNotFoundError(error)) {
+    return "Table 'ColaborateFeedback' not found. Run 'npx prisma db push' to create it.";
+  }
+  return "Internal server error";
+}
+
+// ---------------------------------------------------------------------------
+// Deprecated aliases (one transition release after the SitePing → Colaborate rename)
+// ---------------------------------------------------------------------------
+
+/** @deprecated Renamed — use `createColaborateHandler`. */
+export const createSitepingHandler = createColaborateHandler;

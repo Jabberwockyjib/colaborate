@@ -1,0 +1,51 @@
+{
+  "name": "@colaborate/cli",
+  "version": "0.0.0",
+  "description": "CLI tool to set up Colaborate in your project",
+  "type": "module",
+  "bin": {
+    "colaborate": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "check": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "colaborate",
+    "cli",
+    "prisma",
+    "setup",
+    "developer-tools",
+    "feedback",
+    "nextjs",
+    "prisma-generator",
+    "typescript"
+  ],
+  "author": "Develotype <bdoud@develotype.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/develotype/colaborate",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/develotype/colaborate.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/develotype/colaborate/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@colaborate/core": "workspace:*",
+    "commander": "^13.0.0",
+    "@clack/prompts": "^0.9.0",
+    "@mrleebo/prisma-ast": "^0.12.0"
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "name": "@colaborate/adapter-memory",
+  "version": "0.0.0",
+  "description": "In-memory adapter for Colaborate — zero dependencies, works everywhere",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && node ../../scripts/fix-dts.mjs dist",
+    "check": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "colaborate",
+    "memory",
+    "adapter",
+    "feedback",
+    "testing",
+    "demo",
+    "typescript"
+  ],
+  "author": "Develotype <bdoud@develotype.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/develotype/colaborate",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/develotype/colaborate.git",
+    "directory": "packages/adapter-memory"
+  },
+  "bugs": {
+    "url": "https://github.com/develotype/colaborate/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@colaborate/core": "workspace:*"
+  }
+}

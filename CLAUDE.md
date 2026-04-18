@@ -1,0 +1,30 @@
+# @colaborate/*
+
+## Build & Test
+- `bun install` — install dependencies (bun workspaces)
+- `bun run build` — build all packages via Turborepo + tsup (cached)
+- `bun run check` — TypeScript type-checking via Turborepo (cached)
+- `bun run clean` — clean all dist/ directories
+- `bun run test` — run tests in watch mode
+- `bun run test:run` — run tests once
+- `bun run lint` — biome check
+- `bun run lint:fix` — biome auto-fix
+
+## Architecture
+- **Monorepo** with bun workspaces — 6 packages in `packages/`:
+  - `@colaborate/core` — shared types, schema, store errors + helpers (internal, not published)
+  - `@colaborate/widget` — browser feedback widget (Shadow DOM, closed mode). Accepts `store` option for client-side mode (no server needed)
+  - `@colaborate/adapter-prisma` — server-side Prisma request handlers
+  - `@colaborate/adapter-memory` — in-memory adapter (testing, demos, serverless)
+  - `@colaborate/adapter-localstorage` — client-side localStorage adapter (demos, prototyping)
+  - `@colaborate/cli` — CLI tool for project setup (`colaborate init/sync/status/doctor`)
+- Widget uses Shadow DOM (mode: closed), overlay lives outside Shadow DOM
+- DOM anchoring: @medv/finder CSS selector + XPath fallback + text snippet fallback
+- Annotations stored as % relative to anchor element bounding box
+- Core is an Internal Package (exports raw TS, no build step), bundled into consumers via `noExternal: ["@colaborate/core"]` in tsup
+- Turborepo handles build orchestration, dependency ordering (`^build`), and local caching
+
+## Code Style
+- TypeScript strict mode with exactOptionalPropertyTypes
+- Conventional Commits: `type(scope): description`
+- i18n: English (default) and French locales — target audience is French freelance clients

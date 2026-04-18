@@ -1,0 +1,32 @@
+{
+  "$schema": "https://turborepo.dev/schema.v2.json",
+  "globalDependencies": ["tsconfig.base.json", "biome.json"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "package.json", "tsconfig.json", "tsup.config.ts"],
+      "outputs": ["dist/**"]
+    },
+    "check": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "package.json", "tsconfig.json"],
+      "outputs": []
+    },
+    "lint": {
+      "inputs": ["src/**", "package.json", "biome.json"],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["build"],
+      "inputs": ["src/**", "__tests__/**", "package.json"],
+      "outputs": []
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "clean": {
+      "cache": false
+    }
+  }
+}

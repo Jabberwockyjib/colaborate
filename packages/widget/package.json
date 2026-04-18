@@ -1,0 +1,62 @@
+{
+  "name": "@colaborate/widget",
+  "version": "0.0.0",
+  "description": "Feedback overlay widget with shape annotations, session batching, and MCP-ready per-component feedback",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "script": "./dist/index.global.js"
+    }
+  },
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && node ../../scripts/fix-dts.mjs dist",
+    "check": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "feedback",
+    "widget",
+    "annotation",
+    "client-review",
+    "development",
+    "bug-reporting",
+    "visual-feedback",
+    "website-feedback",
+    "dom-annotation",
+    "self-hosted",
+    "open-source",
+    "shadow-dom",
+    "lightweight",
+    "mcp",
+    "llm"
+  ],
+  "author": "Develotype <bdoud@develotype.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/develotype/colaborate",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/develotype/colaborate.git",
+    "directory": "packages/widget"
+  },
+  "bugs": {
+    "url": "https://github.com/develotype/colaborate/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@medv/finder": "^3.2.0",
+    "@colaborate/core": "workspace:*"
+  }
+}

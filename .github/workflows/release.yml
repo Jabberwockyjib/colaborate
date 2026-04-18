@@ -1,0 +1,256 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish all packages to npm (skip release-please)'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    if: ${{ github.event_name == 'push' }}
+    uses: ./.github/workflows/ci.yml
+
+  release-please:
+    if: ${{ github.event_name == 'push' }}
+    needs: ci
+    runs-on: ubuntu-latest
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      widget-release_created: ${{ steps.release.outputs['packages/widget--release_created'] }}
+      adapter-release_created: ${{ steps.release.outputs['packages/adapter-prisma--release_created'] }}
+      adapter-memory-release_created: ${{ steps.release.outputs['packages/adapter-memory--release_created'] }}
+      adapter-localstorage-release_created: ${{ steps.release.outputs['packages/adapter-localstorage--release_created'] }}
+      cli-release_created: ${{ steps.release.outputs['packages/cli--release_created'] }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.RELEASE_PAT }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  build:
+    needs: release-please
+    if: |
+      !failure() && !cancelled() &&
+      (needs.release-please.outputs.releases_created == 'true' ||
+       (github.event_name == 'workflow_dispatch' && inputs.publish))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-packages
+          path: |
+            packages/widget/dist/
+            packages/adapter-prisma/dist/
+            packages/adapter-memory/dist/
+            packages/adapter-localstorage/dist/
+            packages/cli/dist/
+          retention-days: 1
+
+  publish-widget:
+    needs: [release-please, build]
+    if: |
+      !failure() && !cancelled() &&
+      (needs.release-please.outputs.widget-release_created == 'true' ||
+       (github.event_name == 'workflow_dispatch' && inputs.publish))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - run: bun install --frozen-lockfile
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-packages
+          path: packages/
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish @colaborate/widget
+        run: npm publish --access public --provenance
+        working-directory: packages/widget
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-adapter-prisma:
+    needs: [release-please, build]
+    if: |
+      !failure() && !cancelled() &&
+      (needs.release-please.outputs.adapter-release_created == 'true' ||
+       (github.event_name == 'workflow_dispatch' && inputs.publish))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - run: bun install --frozen-lockfile
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-packages
+          path: packages/
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish @colaborate/adapter-prisma
+        run: npm publish --access public --provenance
+        working-directory: packages/adapter-prisma
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-cli:
+    needs: [release-please, build]
+    if: |
+      !failure() && !cancelled() &&
+      (needs.release-please.outputs.cli-release_created == 'true' ||
+       (github.event_name == 'workflow_dispatch' && inputs.publish))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - run: bun install --frozen-lockfile
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-packages
+          path: packages/
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish @colaborate/cli
+        run: npm publish --access public --provenance
+        working-directory: packages/cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-adapter-memory:
+    needs: [release-please, build]
+    if: |
+      !failure() && !cancelled() &&
+      (needs.release-please.outputs.adapter-memory-release_created == 'true' ||
+       (github.event_name == 'workflow_dispatch' && inputs.publish))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - run: bun install --frozen-lockfile
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-packages
+          path: packages/
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish @colaborate/adapter-memory
+        run: npm publish --access public --provenance
+        working-directory: packages/adapter-memory
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-adapter-localstorage:
+    needs: [release-please, build]
+    if: |
+      !failure() && !cancelled() &&
+      (needs.release-please.outputs.adapter-localstorage-release_created == 'true' ||
+       (github.event_name == 'workflow_dispatch' && inputs.publish))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - run: bun install --frozen-lockfile
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-packages
+          path: packages/
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish @colaborate/adapter-localstorage
+        run: npm publish --access public --provenance
+        working-directory: packages/adapter-localstorage
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
