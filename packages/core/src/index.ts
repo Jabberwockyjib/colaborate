@@ -1,8 +1,7 @@
-export type { FieldDef, IndexDef, ModelDef } from "./schema.js";
-
-export { COLABORATE_MODELS } from "./schema.js";
-export { SHAPES, geometryFromRect, parseGeometry, serializeGeometry } from "./geometry.js";
 export type { Geometry, Shape } from "./geometry.js";
+export { geometryFromRect, parseGeometry, SHAPES, serializeGeometry } from "./geometry.js";
+export type { FieldDef, IndexDef, ModelDef } from "./schema.js";
+export { COLABORATE_MODELS } from "./schema.js";
 export type {
   AnchorData,
   AnnotationCreateInput,

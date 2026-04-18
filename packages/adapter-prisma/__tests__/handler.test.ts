@@ -126,10 +126,14 @@ describe("createColaborateHandler", () => {
       expect(flatAnnotation.textSuffix).toBe("Learn more about us");
       expect(flatAnnotation.fingerprint).toBe("3:1:a1b2c3");
       expect(flatAnnotation.neighborText).toBe("Previous section | Next section");
-      expect(flatAnnotation.xPct).toBe(0.1);
-      expect(flatAnnotation.yPct).toBe(0.2);
-      expect(flatAnnotation.wPct).toBe(0.5);
-      expect(flatAnnotation.hPct).toBe(0.3);
+      expect(flatAnnotation.shape).toBe("rectangle");
+      expect(JSON.parse(flatAnnotation.geometry as string)).toEqual({
+        shape: "rectangle",
+        x: 0.1,
+        y: 0.2,
+        w: 0.5,
+        h: 0.3,
+      });
       expect(flatAnnotation.scrollX).toBe(0);
       expect(flatAnnotation.scrollY).toBe(150);
       expect(flatAnnotation.viewportW).toBe(1920);

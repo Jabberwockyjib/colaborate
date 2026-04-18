@@ -1,4 +1,5 @@
-import type { AnchorData, FeedbackResponse, RectData } from "@colaborate/core";
+import type { AnchorData, FeedbackResponse } from "@colaborate/core";
+import { parseGeometry } from "@colaborate/core";
 import { resolveAnnotation } from "./dom/resolver.js";
 import { el, setText } from "./dom-utils.js";
 import type { EventBus, WidgetEvents } from "./events.js";
@@ -7,6 +8,14 @@ import { getTypeColor, type ThemeColors } from "./styles/theme.js";
 import type { Tooltip } from "./tooltip.js";
 
 type Annotation = FeedbackResponse["annotations"][number];
+
+/** Fractional rectangle bounds (0..1) relative to an anchor element. */
+interface RectFraction {
+  xPct: number;
+  yPct: number;
+  wPct: number;
+  hPct: number;
+}
 
 function toAnchorData(a: Annotation): AnchorData {
   return {
@@ -22,8 +31,22 @@ function toAnchorData(a: Annotation): AnchorData {
   };
 }
 
-function toRectData(a: Annotation): RectData {
-  return { xPct: a.xPct, yPct: a.yPct, wPct: a.wPct, hPct: a.hPct };
+/**
+ * Extract a fractional rectangle from an annotation for marker placement.
+ * Phase 1a: rectangle-only rendering. Non-rectangle shapes (Plan 1c)
+ * fall back to the anchor element's bounding box.
+ */
+function toRectData(a: Annotation): RectFraction {
+  try {
+    const g = parseGeometry(a.geometry);
+    if (g.shape === "rectangle") {
+      return { xPct: g.x, yPct: g.y, wPct: g.w, hPct: g.h };
+    }
+  } catch {
+    // fall through
+  }
+  // Non-rectangle or malformed: anchor-sized fallback (marker pinned to top-right of anchor).
+  return { xPct: 0, yPct: 0, wPct: 1, hPct: 1 };
 }
 
 /** Half of the 26px marker diameter — used for centering on anchor corner. */

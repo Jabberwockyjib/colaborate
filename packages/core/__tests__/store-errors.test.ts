@@ -162,7 +162,8 @@ const sampleAnnotation: AnnotationPayload = {
     fingerprint: "3:1:abc",
     neighborText: "Sibling text",
   },
-  rect: { xPct: 0.1, yPct: 0.2, wPct: 0.5, hPct: 0.3 },
+  shape: "rectangle",
+  geometry: { shape: "rectangle", x: 0.1, y: 0.2, w: 0.5, h: 0.3 },
   scrollX: 0,
   scrollY: 100,
   viewportW: 1920,
@@ -184,12 +185,17 @@ describe("flattenAnnotation", () => {
     expect(result.neighborText).toBe("Sibling text");
   });
 
-  it("flattens rect fields into the output", () => {
+  it("serializes geometry to JSON string", () => {
     const result = flattenAnnotation(sampleAnnotation);
-    expect(result.xPct).toBe(0.1);
-    expect(result.yPct).toBe(0.2);
-    expect(result.wPct).toBe(0.5);
-    expect(result.hPct).toBe(0.3);
+    expect(result.shape).toBe("rectangle");
+    expect(typeof result.geometry).toBe("string");
+    expect(JSON.parse(result.geometry)).toEqual({
+      shape: "rectangle",
+      x: 0.1,
+      y: 0.2,
+      w: 0.5,
+      h: 0.3,
+    });
   });
 
   it("copies viewport and scroll fields", () => {
@@ -219,19 +225,17 @@ describe("flattenAnnotation", () => {
       "elementId",
       "elementTag",
       "fingerprint",
-      "hPct",
+      "geometry",
       "neighborText",
       "scrollX",
       "scrollY",
+      "shape",
       "textPrefix",
       "textSnippet",
       "textSuffix",
       "viewportH",
       "viewportW",
-      "wPct",
-      "xPct",
       "xpath",
-      "yPct",
     ]);
   });
 });

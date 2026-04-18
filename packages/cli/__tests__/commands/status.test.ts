@@ -54,10 +54,8 @@ model ColaborateAnnotation {
   textSuffix       String           @db.Text
   fingerprint      String
   neighborText     String           @db.Text
-  xPct             Float
-  yPct             Float
-  wPct             Float
-  hPct             Float
+  shape            String
+  geometry         String           @db.Text
   scrollX          Float
   scrollY          Float
   viewportW        Int

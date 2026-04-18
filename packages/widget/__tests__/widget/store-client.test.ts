@@ -41,7 +41,8 @@ const sampleAnnotation: AnnotationPayload = {
     fingerprint: "2:0:x1",
     neighborText: "aside",
   },
-  rect: { xPct: 0.1, yPct: 0.2, wPct: 0.5, hPct: 0.3 },
+  shape: "rectangle" as const,
+  geometry: { shape: "rectangle" as const, x: 0.1, y: 0.2, w: 0.5, h: 0.3 },
   scrollX: 0,
   scrollY: 150,
   viewportW: 1920,
@@ -91,10 +92,8 @@ function makeFeedbackRecord(overrides?: Partial<FeedbackRecord>): FeedbackRecord
         textSuffix: "footer",
         fingerprint: "2:0:x1",
         neighborText: "aside",
-        xPct: 0.1,
-        yPct: 0.2,
-        wPct: 0.5,
-        hPct: 0.3,
+        shape: "rectangle",
+        geometry: JSON.stringify({ shape: "rectangle", x: 0.1, y: 0.2, w: 0.5, h: 0.3 }),
         scrollX: 0,
         scrollY: 150,
         viewportW: 1920,
@@ -136,13 +135,20 @@ describe("StoreClient", () => {
 
       // Status should be "open" for new feedbacks
       expect(input.status).toBe("open");
-      // Annotations should be flattened (no anchor/rect nesting)
+      // Annotations should be flattened (no anchor/rect/geometry-object nesting)
       expect(input.annotations[0]!.cssSelector).toBe("div.hero");
-      expect(input.annotations[0]!.xPct).toBe(0.1);
+      expect(input.annotations[0]!.shape).toBe("rectangle");
+      expect(JSON.parse(input.annotations[0]!.geometry)).toEqual({
+        shape: "rectangle",
+        x: 0.1,
+        y: 0.2,
+        w: 0.5,
+        h: 0.3,
+      });
       expect(input.annotations[0]!.scrollY).toBe(150);
-      // No nested anchor/rect
+      // No nested anchor; geometry is a JSON string, not an object.
       expect("anchor" in input.annotations[0]!).toBe(false);
-      expect("rect" in input.annotations[0]!).toBe(false);
+      expect(typeof input.annotations[0]!.geometry).toBe("string");
     });
 
     it("passes all payload fields through", async () => {

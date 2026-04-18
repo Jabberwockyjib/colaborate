@@ -13,7 +13,8 @@ export type {
   FeedbackResponse,
   FeedbackStatus,
   FeedbackType,
-  RectData,
+  Geometry,
+  Shape,
 } from "@colaborate/core";
 
 export type { Identity } from "./identity.js";

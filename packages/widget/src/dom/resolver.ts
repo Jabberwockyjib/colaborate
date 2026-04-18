@@ -1,4 +1,13 @@
-import type { AnchorData, RectData } from "@colaborate/core";
+import type { AnchorData } from "@colaborate/core";
+
+/** Fractional rectangle bounds (0..1) relative to an anchor element — internal shape. */
+interface RectFraction {
+  xPct: number;
+  yPct: number;
+  wPct: number;
+  hPct: number;
+}
+
 import { scoreFingerprint } from "./fingerprint.js";
 import { fuzzyIncludes, similarity } from "./fuzzy.js";
 import { adjacentText, neighborText } from "./text-context.js";
@@ -185,7 +194,7 @@ function scoreCandidate(candidate: Element, anchor: AnchorData): number {
  * Converts stored percentage-based rect back to absolute coordinates
  * using the current bounding box of the resolved anchor element.
  */
-export function resolveAnnotation(anchor: AnchorData, rect: RectData): ResolvedAnnotation | null {
+export function resolveAnnotation(anchor: AnchorData, rect: RectFraction): ResolvedAnnotation | null {
   const resolution = resolveAnchor(anchor);
 
   if (!resolution) return null;

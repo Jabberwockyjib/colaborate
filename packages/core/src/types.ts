@@ -1,3 +1,5 @@
+import { type Geometry, type Shape, serializeGeometry } from "./geometry.js";
+
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
@@ -110,10 +112,10 @@ export interface AnnotationCreateInput {
   textSuffix: string;
   fingerprint: string;
   neighborText: string;
-  xPct: number;
-  yPct: number;
-  wPct: number;
-  hPct: number;
+  /** One of `SHAPES`. Stored as a column for cheap filtering; source of truth is `geometry.shape`. */
+  shape: string;
+  /** Serialized `Geometry` JSON — see `packages/core/src/geometry.ts`. */
+  geometry: string;
   scrollX: number;
   scrollY: number;
   viewportW: number;
@@ -169,10 +171,10 @@ export interface AnnotationRecord {
   textSuffix: string;
   fingerprint: string;
   neighborText: string;
-  xPct: number;
-  yPct: number;
-  wPct: number;
-  hPct: number;
+  /** One of `SHAPES`. */
+  shape: string;
+  /** Serialized `Geometry` JSON. */
+  geometry: string;
   scrollX: number;
   scrollY: number;
   viewportW: number;
@@ -230,7 +232,7 @@ export function isStoreDuplicate(error: unknown): boolean {
 // Store helpers — shared conversion logic for adapters
 // ---------------------------------------------------------------------------
 
-/** Flatten a widget `AnnotationPayload` (nested anchor + rect) into a flat `AnnotationCreateInput`. */
+/** Flatten a widget `AnnotationPayload` (nested anchor + geometry object) into a flat `AnnotationCreateInput` with geometry JSON-serialized. */
 export function flattenAnnotation(ann: AnnotationPayload): AnnotationCreateInput {
   return {
     cssSelector: ann.anchor.cssSelector,
@@ -242,10 +244,8 @@ export function flattenAnnotation(ann: AnnotationPayload): AnnotationCreateInput
     textSuffix: ann.anchor.textSuffix,
     fingerprint: ann.anchor.fingerprint,
     neighborText: ann.anchor.neighborText,
-    xPct: ann.rect.xPct,
-    yPct: ann.rect.yPct,
-    wPct: ann.rect.wPct,
-    hPct: ann.rect.hPct,
+    shape: ann.shape,
+    geometry: serializeGeometry(ann.geometry),
     scrollX: ann.scrollX,
     scrollY: ann.scrollY,
     viewportW: ann.viewportW,
@@ -330,22 +330,13 @@ export interface AnchorData {
   neighborText: string;
 }
 
-/** Drawn rectangle coordinates as percentages relative to the anchor element. */
-export interface RectData {
-  /** X offset as fraction of anchor element width — must be in range [0, 1] */
-  xPct: number;
-  /** Y offset as fraction of anchor element height — must be in range [0, 1] */
-  yPct: number;
-  /** Width as fraction of anchor element width — must be in range [0, 1] */
-  wPct: number;
-  /** Height as fraction of anchor element height — must be in range [0, 1] */
-  hPct: number;
-}
-
 /** Annotation data sent as part of a feedback submission. */
 export interface AnnotationPayload {
   anchor: AnchorData;
-  rect: RectData;
+  /** Discriminator for the geometry — one of `SHAPES`. */
+  shape: Shape;
+  /** Geometry object (typed union on `shape`). Server serializes to JSON string for storage. */
+  geometry: Geometry;
   scrollX: number;
   scrollY: number;
   viewportW: number;
@@ -388,10 +379,10 @@ export interface AnnotationResponse {
   textSuffix: string;
   fingerprint: string;
   neighborText: string;
-  xPct: number;
-  yPct: number;
-  wPct: number;
-  hPct: number;
+  /** One of `SHAPES`. */
+  shape: string;
+  /** Serialized `Geometry` JSON. */
+  geometry: string;
   scrollX: number;
   scrollY: number;
   viewportW: number;

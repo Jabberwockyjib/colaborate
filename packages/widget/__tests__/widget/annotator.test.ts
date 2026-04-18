@@ -467,7 +467,8 @@ describe("Annotator", () => {
       });
 
       const data = completeListener.mock.calls[0][0];
-      expect(data.annotation.rect).toEqual({ xPct: 0, yPct: 0, wPct: 1, hPct: 1 });
+      expect(data.annotation.shape).toBe("rectangle");
+      expect(data.annotation.geometry).toEqual({ shape: "rectangle", x: 0, y: 0, w: 1, h: 1 });
 
       target.remove();
     });

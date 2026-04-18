@@ -1,4 +1,4 @@
-import type { AnnotationPayload, FeedbackType } from "@colaborate/core";
+import type { AnnotationPayload, FeedbackType, Geometry } from "@colaborate/core";
 import { findAnchorElement, generateAnchor, rectToPercentages } from "./dom/anchor.js";
 import { el, setText } from "./dom-utils.js";
 import type { EventBus, WidgetEvents } from "./events.js";
@@ -204,9 +204,11 @@ export class Annotator {
     if (!result) return;
 
     const anchor = generateAnchor(target);
+    const geometry: Geometry = { shape: "rectangle", x: 0, y: 0, w: 1, h: 1 };
     const annotation: AnnotationPayload = {
       anchor,
-      rect: { xPct: 0, yPct: 0, wPct: 1, hPct: 1 },
+      shape: "rectangle",
+      geometry,
       scrollX: window.scrollX,
       scrollY: window.scrollY,
       viewportW: window.innerWidth,
@@ -348,10 +350,18 @@ export class Annotator {
     const anchor = generateAnchor(anchorElement);
     const anchorBounds = anchorElement.getBoundingClientRect();
     const rect = rectToPercentages(rectBounds, anchorBounds);
+    const geometry: Geometry = {
+      shape: "rectangle",
+      x: rect.xPct,
+      y: rect.yPct,
+      w: rect.wPct,
+      h: rect.hPct,
+    };
 
     return {
       anchor,
-      rect,
+      shape: "rectangle",
+      geometry,
       scrollX: window.scrollX,
       scrollY: window.scrollY,
       viewportW: window.innerWidth,

@@ -45,10 +45,8 @@ function createInput(overrides?: Partial<FeedbackCreateInput>): FeedbackCreateIn
         textSuffix: "after",
         fingerprint: "3:1:abc",
         neighborText: "sibling",
-        xPct: 0.1,
-        yPct: 0.2,
-        wPct: 0.5,
-        hPct: 0.3,
+        shape: "rectangle",
+        geometry: JSON.stringify({ shape: "rectangle", x: 0.1, y: 0.2, w: 0.5, h: 0.3 }),
         scrollX: 0,
         scrollY: 100,
         viewportW: 1920,
@@ -107,7 +105,10 @@ export function testColaborateStore(factory: () => ColaborateStore): void {
         expect(ann?.id).toBeDefined();
         expect(ann?.feedbackId).toBe(record.id);
         expect(ann?.cssSelector).toBe("div.main");
-        expect(ann?.xPct).toBe(0.1);
+        expect(ann?.shape).toBe("rectangle");
+        expect(ann?.geometry).toBeDefined();
+        const geom = JSON.parse(ann?.geometry ?? "{}");
+        expect(geom).toEqual({ shape: "rectangle", x: 0.1, y: 0.2, w: 0.5, h: 0.3 });
         expect(ann?.elementId).toBe("main");
         expect(ann?.createdAt).toBeInstanceOf(Date);
       });
@@ -125,10 +126,8 @@ export function testColaborateStore(factory: () => ColaborateStore): void {
               textSuffix: "",
               fingerprint: "1:0:x",
               neighborText: "",
-              xPct: 0,
-              yPct: 0,
-              wPct: 1,
-              hPct: 1,
+              shape: "rectangle",
+              geometry: JSON.stringify({ shape: "rectangle", x: 0, y: 0, w: 1, h: 1 }),
               scrollX: 0,
               scrollY: 0,
               viewportW: 1920,

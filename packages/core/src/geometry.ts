@@ -48,12 +48,7 @@ export function parseGeometry(raw: string): Geometry {
 }
 
 /** Construct a rectangle Geometry from legacy widget rect fields (percent). */
-export function geometryFromRect(rect: {
-  xPct: number;
-  yPct: number;
-  wPct: number;
-  hPct: number;
-}): Geometry {
+export function geometryFromRect(rect: { xPct: number; yPct: number; wPct: number; hPct: number }): Geometry {
   return { shape: "rectangle", x: rect.xPct, y: rect.yPct, w: rect.wPct, h: rect.hPct };
 }
 

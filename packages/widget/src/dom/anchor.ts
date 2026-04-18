@@ -1,8 +1,16 @@
-import type { AnchorData, RectData } from "@colaborate/core";
+import type { AnchorData } from "@colaborate/core";
 import { finder } from "@medv/finder";
 import { generateFingerprint } from "./fingerprint.js";
 import { adjacentText, neighborText } from "./text-context.js";
 import { generateXPath } from "./xpath.js";
+
+/** Fractional rectangle bounds (0..1) relative to an anchor element. */
+export interface RectFraction {
+  xPct: number;
+  yPct: number;
+  wPct: number;
+  hPct: number;
+}
 
 /**
  * Generate a multi-selector anchor for a DOM element.
@@ -84,7 +92,7 @@ export function findAnchorElement(rect: DOMRect, root: Element = document.docume
  * Convert absolute rectangle coordinates to percentages
  * relative to an anchor element's bounding box.
  */
-export function rectToPercentages(rect: DOMRect, anchorBounds: DOMRect): RectData {
+export function rectToPercentages(rect: DOMRect, anchorBounds: DOMRect): RectFraction {
   // Guard against zero-dimension anchors (collapsed/hidden elements)
   if (anchorBounds.width <= 0 || anchorBounds.height <= 0) {
     return { xPct: 0, yPct: 0, wPct: 1, hPct: 1 };

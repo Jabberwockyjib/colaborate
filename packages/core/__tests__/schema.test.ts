@@ -153,10 +153,8 @@ describe("ColaborateAnnotation model", () => {
       "textSuffix",
       "fingerprint",
       "neighborText",
-      "xPct",
-      "yPct",
-      "wPct",
-      "hPct",
+      "shape",
+      "geometry",
       "scrollX",
       "scrollY",
       "viewportW",
@@ -190,10 +188,10 @@ describe("ColaborateAnnotation model", () => {
     expect(fields.elementId.optional).toBe(true);
   });
 
-  it("coordinate fields (xPct, yPct, wPct, hPct) are Float", () => {
-    for (const field of ["xPct", "yPct", "wPct", "hPct"]) {
-      expect(fields[field].type).toBe("Float");
-    }
+  it("shape is a String column; geometry is Text (JSON-serialized Geometry)", () => {
+    expect(fields.shape.type).toBe("String");
+    expect(fields.geometry.type).toBe("String");
+    expect(fields.geometry.nativeType).toBe("Text");
   });
 
   it("scroll fields (scrollX, scrollY) are Float", () => {

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   type Geometry,
-  type Shape,
   geometryFromRect,
   parseGeometry,
-  serializeGeometry,
   SHAPES,
+  type Shape,
+  serializeGeometry,
 } from "../src/geometry.js";
 
 describe("SHAPES constant", () => {
@@ -21,7 +21,15 @@ describe("Geometry round-trip (serialize → parse)", () => {
     { shape: "arrow", x1: 0.1, y1: 0.1, x2: 0.9, y2: 0.9, headSize: 12 },
     { shape: "line", x1: 0.0, y1: 0.5, x2: 1.0, y2: 0.5 },
     { shape: "textbox", x: 0.3, y: 0.4, w: 0.4, h: 0.1, text: "Change this", fontSize: 14 },
-    { shape: "freehand", points: [[0.1, 0.1], [0.2, 0.15], [0.25, 0.2]], strokeWidth: 3 },
+    {
+      shape: "freehand",
+      points: [
+        [0.1, 0.1],
+        [0.2, 0.15],
+        [0.25, 0.2],
+      ],
+      strokeWidth: 3,
+    },
   ];
 
   for (const input of cases) {
@@ -52,9 +60,7 @@ describe("parseGeometry", () => {
   });
 
   it("throws when freehand points is empty", () => {
-    expect(() =>
-      parseGeometry(JSON.stringify({ shape: "freehand", points: [], strokeWidth: 1 })),
-    ).toThrow();
+    expect(() => parseGeometry(JSON.stringify({ shape: "freehand", points: [], strokeWidth: 1 }))).toThrow();
   });
 });
 

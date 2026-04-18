@@ -21,16 +21,65 @@ const anchorSchema = z.object({
   neighborText: z.string().max(500),
 });
 
-const rectSchema = z.object({
-  xPct: z.number().min(0).max(1),
-  yPct: z.number().min(0).max(1),
-  wPct: z.number().min(0).max(1),
-  hPct: z.number().min(0).max(1),
+const rectangleGeom = z.object({
+  shape: z.literal("rectangle"),
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
 });
+const circleGeom = z.object({
+  shape: z.literal("circle"),
+  cx: z.number(),
+  cy: z.number(),
+  rx: z.number(),
+  ry: z.number(),
+});
+const arrowGeom = z.object({
+  shape: z.literal("arrow"),
+  x1: z.number(),
+  y1: z.number(),
+  x2: z.number(),
+  y2: z.number(),
+  headSize: z.number(),
+});
+const lineGeom = z.object({
+  shape: z.literal("line"),
+  x1: z.number(),
+  y1: z.number(),
+  x2: z.number(),
+  y2: z.number(),
+});
+const textboxGeom = z.object({
+  shape: z.literal("textbox"),
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+  text: z.string().max(2000),
+  fontSize: z.number().positive(),
+});
+const freehandGeom = z.object({
+  shape: z.literal("freehand"),
+  points: z
+    .array(z.tuple([z.number(), z.number()]))
+    .min(1)
+    .max(5000),
+  strokeWidth: z.number().positive(),
+});
+const geometrySchema = z.discriminatedUnion("shape", [
+  rectangleGeom,
+  circleGeom,
+  arrowGeom,
+  lineGeom,
+  textboxGeom,
+  freehandGeom,
+]);
 
 const annotationSchema = z.object({
   anchor: anchorSchema,
-  rect: rectSchema,
+  shape: z.enum(["rectangle", "circle", "arrow", "line", "textbox", "freehand"]),
+  geometry: geometrySchema,
   scrollX: z.number().min(0),
   scrollY: z.number().min(0),
   viewportW: z.number().int().positive(),
@@ -87,16 +136,10 @@ export interface AnchorInput {
   neighborText: string;
 }
 
-export interface RectInput {
-  xPct: number;
-  yPct: number;
-  wPct: number;
-  hPct: number;
-}
-
 export interface AnnotationInput {
   anchor: AnchorInput;
-  rect: RectInput;
+  shape: import("@colaborate/core").Shape;
+  geometry: import("@colaborate/core").Geometry;
   scrollX: number;
   scrollY: number;
   viewportW: number;
