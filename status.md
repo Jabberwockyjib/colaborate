@@ -1,90 +1,68 @@
 # Colaborate — session status (2026-04-18)
 
-## What shipped this session
+## What's landed
 
-**Phase 0 — Fork SitePing & Rebrand → ✅ complete**, committed on `main` as `v0.0.0-fork` (commit `e656ff4`).
+| Phase | Status | Commit | Tag |
+|---|---|---|---|
+| Brainstorm + spec | ✅ | — | — |
+| **Phase 0** — fork + rebrand | ✅ | `e656ff4` | `v0.0.0-fork` |
+| **Phase 1a** — Geometry-as-union data layer | ✅ | `ce24787` | `v0.1.0-phase-1a` |
 
-### Deliverables
+**Current main branch state — all green:**
 
-- **Spec:** `docs/superpowers/specs/2026-04-18-colaborate-design.md` (full v0 design, end-to-end).
-- **Phase 0 plan:** `docs/superpowers/plans/2026-04-18-phase-0-fork-and-rebrand.md` (15 bite-sized tasks).
-- **Brainstorming transcript / plan-mode artifact:** `/Users/brian/.claude/plans/i-want-to-create-jaunty-bachman.md` (mirrors the spec).
+- `bun run build` → 7/7 packages build
+- `bun run test:run` → **796 / 796 unit tests pass** (was 780; +14 geometry tests, +2 validation tests added this phase)
+- `bun run test:e2e` → 85/85 Playwright pass, 2 skipped (touch — mobile-only)
+- `bun run lint` → biome clean (148 files)
 
-### Fork state
+## What Phase 1a shipped
 
-- **Cloned at** `github.com/NeosiaNexus/SitePing` tag `widget-v0.9.5`, SHA `1bfb1db5778f0ca06583139180e6c0487f6eed8e`.
-- **Fresh git history** on `main`; upstream added as read-only remote (`git remote -v` shows `upstream ... DISABLED_PUSH`) for future cherry-picks.
-- **MIT license** preserved; `NOTICE` added with attribution.
-- **Packages renamed:** `@siteping/{core,widget,adapter-prisma,adapter-memory,adapter-localstorage,cli}` → `@colaborate/*`, plus `@colaborate/demo` app.
-- **Public API renames** (with deprecated aliases kept for one transition release):
-  - `initSiteping` → `initColaborate`
-  - `createSitepingHandler` → `createColaborateHandler`
-  - `SitepingConfig/Instance/Store/PublicEvents` → `Colaborate*`
-- **Data-model symbols renamed in code only** (DB migration lands in Phase 1): `SITEPING_MODELS` → `COLABORATE_MODELS`, `SitepingFeedback/Annotation` → `Colaborate*`, Prisma accessor `prisma.sitepingFeedback` → `prisma.colaborateFeedback`.
-- **Runtime renames:** custom element `siteping-widget` → `colaborate-widget`; CLI bin `siteping` → `colaborate`; API route `/api/siteping` → `/api/colaborate`; localStorage keys `siteping_* → colaborate_*`; env var `SITEPING_API_KEY` → `COLABORATE_API_KEY`.
-- **All package versions reset to `0.0.0`**; release-please manifest reset.
+Replaced the fixed `xPct / yPct / wPct / hPct` rectangle with a **`Geometry` discriminated union** across every layer:
 
-### Verified green
+- **New module** `packages/core/src/geometry.ts`: `Shape` literal (6 primitives: rectangle, circle, arrow, line, textbox, freehand), `Geometry` union, `serializeGeometry`, `parseGeometry`, `geometryFromRect`. 14 round-trip + validation tests.
+- **Schema:** `ColaborateAnnotation` dropped the four legacy Float columns, gained `shape: String` + `geometry: String @db.Text` (JSON-serialized union — DB-agnostic: Postgres/MySQL/SQLite).
+- **Wire format:** `AnnotationPayload` carries `shape: Shape` + `geometry: Geometry` object. Zod validates with `discriminatedUnion("shape", [...])`.
+- **Store layer:** `AnnotationCreateInput` / `AnnotationRecord` / `AnnotationResponse` all changed uniformly. `flattenAnnotation` now serializes geometry to JSON string on the store boundary.
+- **All 3 adapters** (Prisma, memory, localStorage) updated.
+- **Widget** annotator emits `{ shape: "rectangle", geometry: { x, y, w, h } }`. Markers parse `geometry` and narrow to rectangle (other shapes are no-op for now — Plan 1c adds them).
+- **Deprecated:** `RectData` type removed (no stable consumers yet).
 
-- `bun run build` → 7/7 packages build (17.3 s)
-- `bun run test:run` → **780 / 780 unit tests pass** (36 files)
-- `bun run test:e2e` → **85 / 85 Playwright tests pass**, 2 skipped (touch annotation, mobile-only — same skip as upstream)
-- `bun run lint` → biome clean (146 files)
+## Phase 1 decomposition (in-flight)
 
-### Infra fixes applied during Phase 0
+The spec's "Phase 1" was too big for one plan — I split it into three:
 
-1. **Node 25 / jsdom conflict.** Node 25 ships an experimental Web Storage API that injects a stub `globalThis.localStorage` with no methods, shadowing jsdom's real `Storage`. Broke 33 localStorage tests. Fix: `NODE_OPTIONS=--no-experimental-webstorage` prepended to `test`, `test:run`, and `test:e2e` scripts in root `package.json`. This lets jsdom's Storage shim take precedence.
-2. **jsdom version pin.** Caret `^29.0.1` resolved to `29.0.2` on first install; pinned to exact `29.0.1` to match what upstream CI was passing against.
+| Plan | Scope | Status |
+|---|---|---|
+| **1a** | Geometry data layer (types, schema, validation, storage) | ✅ `ce24787` |
+| **1b** | New schema fields: `ColaborateSession`, `sessionId`, `componentId`, `sourceFile/Line/Column`, `mentions[]` | 📝 not yet written |
+| **1c** | Widget UI: shape picker + 5 drawing modes + shortcuts + marker rendering for all shapes | 📝 not yet written |
 
-## Outstanding items (open questions / decisions you'll want to weigh in on)
+Plan 1b is purely additive (new columns, new table) — no breaking changes, ships independently, keeps session drafting + component-aware feedback on the backend even before the widget consumes them.
 
-### 1. GitHub repo creation
+Plan 1c depends only on 1a (not on 1b) — it adds the drawing UI for shapes already representable in the data layer.
 
-Nothing on GitHub yet. When ready:
+## Outstanding items (unchanged from the prior handoff)
 
-```bash
-cd /Users/brian/dev/colaborate
-gh repo create develotype/colaborate --public --source=. --description "Client feedback overlay with MCP-driven fix loop. Forked from NeosiaNexus/SitePing."
-git push -u origin main --tags
-```
-
-The package.json repository URLs already point at `https://github.com/develotype/colaborate.git`. If the org/name should be different, a targeted sed will fix it.
-
-### 2. `apps/demo` marketing copy
-
-The demo site (`apps/demo/`) still contains SitePing's marketing pitch lightly rebranded — "Client feedback, pinned to the pixel," the comparison table, FAQ, etc. Branding tokens are fully swept, but the positioning still reads like SitePing (not wrong, just not our specific MCP angle yet). Left intentionally for Phase 7 when we rewrite around the MCP / Parkland story.
-
-### 3. Package name on npm
-
-`@colaborate` is an npm scope that may be taken. We haven't tried to publish yet. If the scope is unavailable, alternatives: `@develotype/colaborate-*`, `@colaborate-tools/*`, etc.
-
-### 4. Upstream bug fix cherry-picks
-
-Upstream SitePing is releasing weekly (widget-v0.9.5 dates from 2026-04-05, with churn since). A merge strategy note is in the spec under "Known risks." We don't auto-pull; we cherry-pick fixes we want.
-
-## Next up — Phase 1
-
-Schema migration + 5 new shape primitives (circle / arrow / line / text box / freehand). Plan to be written as `docs/superpowers/plans/2026-04-19-phase-1-schema-and-shapes.md` when you're ready to start — I didn't jump ahead since the Geometry-union schema work is TDD-heavy and benefits from a fresh Plan + Execute cycle with your review in between.
+- **GitHub repo creation** — nothing on GitHub yet. When ready: `gh repo create develotype/colaborate --public --source=. && git push -u origin main --tags`.
+- **@colaborate npm scope** — not verified available. Alternatives: `@develotype/colaborate-*`.
+- **`apps/demo` marketing copy** — rebranded but still pitches the SitePing value-prop; rewrite lands in Phase 7.
+- **Upstream cherry-picks** — SitePing is moving; we pin, cherry-pick bug fixes only.
 
 ## How to pick this up
 
 ```bash
 cd /Users/brian/dev/colaborate
-git log --oneline             # see the single fork commit + tag
-bun install                    # already done; re-run if deps drift
-bun run test:run               # 780 passing
-bun run test:e2e               # 85 passing
+git log --oneline          # 4 commits
+git tag --list             # v0.0.0-fork, v0.1.0-phase-1a
+bun run test:run           # 796 passing
+bun run test:e2e           # 85 passing
 ```
 
-Spec + plan locations:
-- `docs/superpowers/specs/2026-04-18-colaborate-design.md`
-- `docs/superpowers/plans/2026-04-18-phase-0-fork-and-rebrand.md`
-
-## Files modified / created today
-
-- 243 files committed (full SitePing checkout + rebrand diffs + our spec/plan/NOTICE/README)
-- Single commit `e656ff4` tagged `v0.0.0-fork`
+Design docs:
+- `docs/superpowers/specs/2026-04-18-colaborate-design.md` — full v0 spec
+- `docs/superpowers/plans/2026-04-18-phase-0-fork-and-rebrand.md` — executed
+- `docs/superpowers/plans/2026-04-18-phase-1a-geometry-union.md` — executed
 
 ---
 
-*Report generated autonomously during a user-away session. No blocking issues encountered after the Node 25 fix.*
+*Phase 1a complete. Ready for Plan 1b (schema) or 1c (widget UI). Both can be written + executed autonomously on request — 1c is the more visibly impactful option since it unlocks all 5 new drawing primitives for reviewers.*
