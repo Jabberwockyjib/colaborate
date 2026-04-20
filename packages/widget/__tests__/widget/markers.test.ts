@@ -845,4 +845,26 @@ describe("MarkerManager", () => {
       spy.mockRestore();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Circle highlight (shape-render integration)
+  // -------------------------------------------------------------------------
+
+  it("renders a <svg> highlight element for a circle annotation", () => {
+    const feedback = makeFeedback({
+      annotations: [
+        makeAnnotation({
+          shape: "circle",
+          geometry: JSON.stringify({ shape: "circle", cx: 0.5, cy: 0.5, rx: 0.3, ry: 0.25 }),
+        }),
+      ],
+    });
+    markers.render([feedback]);
+    markers.showHighlight(feedback);
+
+    const container = document.getElementById("colaborate-markers")!;
+    const svg = container.querySelector("svg");
+    expect(svg).not.toBeNull();
+    expect(svg!.querySelector("ellipse")).not.toBeNull();
+  });
 });

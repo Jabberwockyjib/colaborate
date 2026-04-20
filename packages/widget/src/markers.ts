@@ -1,9 +1,10 @@
-import type { AnchorData, FeedbackResponse } from "@colaborate/core";
+import type { AnchorData, FeedbackResponse, Geometry } from "@colaborate/core";
 import { parseGeometry } from "@colaborate/core";
 import { resolveAnnotation } from "./dom/resolver.js";
 import { el, setText } from "./dom-utils.js";
 import type { EventBus, WidgetEvents } from "./events.js";
 import { getTypeLabel, type TFunction } from "./i18n/index.js";
+import { renderShapeHighlight } from "./shape-render.js";
 import { getTypeColor, type ThemeColors } from "./styles/theme.js";
 import type { Tooltip } from "./tooltip.js";
 
@@ -532,30 +533,26 @@ export class MarkerManager {
 
   showHighlight(feedback: FeedbackResponse): void {
     this.removeHighlightElements();
+    const typeColor = getTypeColor(feedback.type, this.colors);
     for (const annotation of feedback.annotations) {
       const resolved = resolveAnnotation(toAnchorData(annotation), toRectData(annotation));
       if (!resolved) continue;
+      const anchorBounds = resolved.element.getBoundingClientRect();
 
-      const typeColor = getTypeColor(feedback.type, this.colors);
-      const rect = resolved.rect;
-      const highlight = el("div", {
-        style: `
-          position:absolute;
-          top:${rect.top + window.scrollY}px;
-          left:${rect.left + window.scrollX}px;
-          width:${rect.width}px;height:${rect.height}px;
-          border:2px solid ${typeColor};
-          background:${typeColor}0c;
-          border-radius:8px;
-          pointer-events:none;z-index:-1;
-          opacity:0;
-          box-shadow:0 0 16px ${typeColor}20;
-          transition:opacity ${HIGHLIGHT_FADE}ms ease;
-        `,
-      });
+      let geometry: Geometry;
+      try {
+        geometry = parseGeometry(annotation.geometry);
+      } catch {
+        // Malformed geometry — fall back to a full-anchor rectangle so the user still sees something.
+        geometry = { shape: "rectangle", x: 0, y: 0, w: 1, h: 1 };
+      }
+
+      const highlight = renderShapeHighlight(geometry, anchorBounds, typeColor);
+      highlight.style.opacity = "0";
+      highlight.style.transition = `opacity ${HIGHLIGHT_FADE}ms ease`;
       this.container.appendChild(highlight);
-      this.highlightElements.push(highlight);
-      void highlight.offsetHeight; // Force reflow for CSS transition
+      this.highlightElements.push(highlight as HTMLElement);
+      void (highlight as HTMLElement).offsetHeight; // Force reflow for CSS transition
       highlight.style.opacity = "1";
     }
   }
