@@ -113,14 +113,6 @@ export interface SessionRecord {
   updatedAt: Date;
 }
 
-/** Update payload for patching a session — at minimum the status transition. */
-export interface SessionUpdateInput {
-  status: SessionStatus;
-  submittedAt?: Date | null | undefined;
-  triagedAt?: Date | null | undefined;
-  notes?: string | null | undefined;
-}
-
 // ---------------------------------------------------------------------------
 // Abstract Store — adapter pattern
 // ---------------------------------------------------------------------------
@@ -145,8 +137,8 @@ export interface FeedbackCreateInput {
   sourceFile?: string | null | undefined;
   sourceLine?: number | null | undefined;
   sourceColumn?: number | null | undefined;
-  /** Serialized `Mention[]` JSON — see `packages/core/src/mentions.ts`. Defaults to `"[]"` in the store. */
-  mentions: string;
+  /** Serialized `Mention[]` JSON — see `packages/core/src/mentions.ts`. Defaults to `"[]"` in the store when omitted. */
+  mentions?: string | undefined;
   /** Tracker integration set by the triage worker (Phase 5). */
   externalProvider?: string | null | undefined;
   externalIssueId?: string | null | undefined;

@@ -25,7 +25,6 @@ export type {
   SessionCreateInput,
   SessionRecord,
   SessionStatus,
-  SessionUpdateInput,
 } from "./types.js";
 export {
   FEEDBACK_STATUSES,
