@@ -485,9 +485,10 @@ export function testColaborateStore(factory: () => ColaborateStore): void {
 
       it("defaults mentions to '[]' when omitted", async () => {
         freshStore();
-        // Test fixture sets mentions to "[]" explicitly; also verify omitting through the
-        // required-field interface by spreading a new object that keeps mentions.
-        const fb = await store.createFeedback(createInput());
+        // Strip mentions from the fixture to exercise the store's default, not the fixture's explicit "[]".
+        const input = createInput();
+        delete (input as Partial<FeedbackCreateInput>).mentions;
+        const fb = await store.createFeedback(input);
         expect(fb.mentions).toBe("[]");
       });
 
