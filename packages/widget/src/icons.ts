@@ -43,3 +43,5 @@ export const ICON_SHAPE_LINE = `<svg viewBox="0 0 24 24" fill="none" stroke="cur
 export const ICON_SHAPE_TEXTBOX = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="1.5"/><path d="M8 10h8"/><path d="M8 14h5"/></svg>`;
 
 export const ICON_SHAPE_FREEHAND = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 18 C 7 14, 10 20, 13 14 S 19 8, 20 6"/></svg>`;
+
+export const ICON_SESSION = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>`;

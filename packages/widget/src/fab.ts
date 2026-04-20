@@ -2,7 +2,15 @@ import type { ColaborateConfig } from "@colaborate/core";
 import { parseSvg, setText } from "./dom-utils.js";
 import type { EventBus, WidgetEvents } from "./events.js";
 import type { TFunction } from "./i18n/index.js";
-import { ICON_ANNOTATE, ICON_CHAT, ICON_CLOSE, ICON_COLABORATE, ICON_EYE, ICON_EYE_OFF } from "./icons.js";
+import {
+  ICON_ANNOTATE,
+  ICON_CHAT,
+  ICON_CLOSE,
+  ICON_COLABORATE,
+  ICON_EYE,
+  ICON_EYE_OFF,
+  ICON_SESSION,
+} from "./icons.js";
 
 interface RadialItem {
   id: string;
@@ -41,6 +49,7 @@ export class Fab {
     this.items = [
       { id: "chat", icon: ICON_CHAT, label: t("fab.messages") },
       { id: "annotate", icon: ICON_ANNOTATE, label: t("fab.annotate") },
+      { id: "session", icon: ICON_SESSION, label: t("fab.session") },
       { id: "toggle-annotations", icon: ICON_EYE, iconAlt: ICON_EYE_OFF, label: t("fab.annotations") },
     ];
 
@@ -221,6 +230,9 @@ export class Fab {
         break;
       case "annotate":
         this.bus.emit("annotation:start");
+        break;
+      case "session":
+        this.bus.emit("session-panel:toggle", true);
         break;
       case "toggle-annotations": {
         this.annotationsVisible = !this.annotationsVisible;

@@ -73,15 +73,15 @@ describe("Fab", () => {
       expect(menu).not.toBeNull();
     });
 
-    it("creates three radial menu items with role=menuitem", () => {
+    it("creates four radial menu items with role=menuitem", () => {
       const items = shadow.querySelectorAll('[role="menuitem"]');
-      expect(items.length).toBe(3);
+      expect(items.length).toBe(4);
     });
 
     it("assigns correct data-item-id to each menu item", () => {
       const items = getRadialItems(shadow);
       const ids = items.map((btn) => btn.dataset.itemId);
-      expect(ids).toEqual(["chat", "annotate", "toggle-annotations"]);
+      expect(ids).toEqual(["chat", "annotate", "session", "toggle-annotations"]);
     });
 
     it("applies position class based on config", () => {

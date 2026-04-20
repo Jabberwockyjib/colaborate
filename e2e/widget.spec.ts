@@ -223,11 +223,11 @@ test.describe("Widget injection", () => {
 });
 
 test.describe("FAB radial menu", () => {
-  test("opens on click and shows 3 items", async ({ page }) => {
+  test("opens on click and shows 4 items", async ({ page }) => {
     const s = shadow(page);
     await s.click(".sp-fab");
     await s.waitFor(".sp-radial-item--open");
-    expect(await s.count(".sp-radial-item--open")).toBe(3);
+    expect(await s.count(".sp-radial-item--open")).toBe(4);
   });
 
   test("closes on second click", async ({ page }) => {
