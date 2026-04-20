@@ -7,7 +7,7 @@ import { LocalStorageStore } from "../src/index.js";
 // Run the full ColaborateStore conformance suite
 testColaborateStore(() => {
   localStorage.clear();
-  return new LocalStorageStore({ key: "test_conformance" });
+  return new LocalStorageStore({ key: "test_conformance", sessionsKey: "test_conformance_sessions" });
 });
 
 // ---------------------------------------------------------------------------
@@ -19,7 +19,7 @@ describe("LocalStorageStore specific", () => {
 
   beforeEach(() => {
     localStorage.clear();
-    store = new LocalStorageStore({ key: "test_feedbacks" });
+    store = new LocalStorageStore({ key: "test_feedbacks", sessionsKey: "test_sessions" });
   });
 
   afterEach(() => {
@@ -103,6 +103,40 @@ describe("LocalStorageStore specific", () => {
   });
 
   // -----------------------------------------------------------------------
+  // Session round-trip
+  // -----------------------------------------------------------------------
+
+  describe("session serialization", () => {
+    it("persists sessions across reloads (dates revived correctly)", async () => {
+      const created = await store.createSession({
+        projectName: "rt-project",
+        reviewerName: "Alice",
+        reviewerEmail: "alice@example.com",
+        notes: "Round-trip test",
+      });
+      await store.submitSession(created.id);
+
+      // New store instance, same keys — simulates a page reload
+      const store2 = new LocalStorageStore({ key: "test_feedbacks", sessionsKey: "test_sessions" });
+      const loaded = await store2.getSession(created.id);
+
+      expect(loaded).not.toBeNull();
+      expect(loaded?.id).toBe(created.id);
+      expect(loaded?.projectName).toBe("rt-project");
+      expect(loaded?.reviewerName).toBe("Alice");
+      expect(loaded?.reviewerEmail).toBe("alice@example.com");
+      expect(loaded?.notes).toBe("Round-trip test");
+      expect(loaded?.status).toBe("submitted");
+      // Date round-trip: fields should be Date instances, not strings
+      expect(loaded?.createdAt).toBeInstanceOf(Date);
+      expect(loaded?.updatedAt).toBeInstanceOf(Date);
+      expect(loaded?.submittedAt).toBeInstanceOf(Date);
+      // Unset nullable dates stay null across revival
+      expect(loaded?.triagedAt).toBeNull();
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // Edge cases
   // -----------------------------------------------------------------------
 
@@ -129,10 +163,16 @@ describe("LocalStorageStore specific", () => {
       Storage.prototype.setItem = original;
     });
 
-    it("clear() removes all data for this store key", async () => {
+    it("clear() removes all data for this store's keys", async () => {
       await store.createFeedback(input);
+      await store.createSession({ projectName: "test-project", reviewerName: "Alice" });
+      expect(localStorage.getItem("test_feedbacks")).not.toBeNull();
+      expect(localStorage.getItem("test_sessions")).not.toBeNull();
+
       store.clear();
+
       expect(localStorage.getItem("test_feedbacks")).toBeNull();
+      expect(localStorage.getItem("test_sessions")).toBeNull();
     });
 
     it("multiple stores with different keys are isolated", async () => {
