@@ -21,24 +21,35 @@ generator client {
 }
 
 model ColaborateFeedback {
-  id           String              @id @default(cuid())
-  projectName  String
-  type         String
-  message      String              @db.Text
-  status       String              @default("open")
-  url          String
-  viewport     String
-  userAgent    String
-  authorName   String
-  authorEmail  String
-  clientId     String              @unique
-  resolvedAt   DateTime?
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-  annotations  ColaborateAnnotation[]
+  id               String              @id @default(cuid())
+  projectName      String
+  type             String
+  message          String              @db.Text
+  status           String              @default("open")
+  url              String
+  viewport         String
+  userAgent        String
+  authorName       String
+  authorEmail      String
+  clientId         String              @unique
+  resolvedAt       DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  sessionId        String?
+  session          ColaborateSession?  @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  componentId      String?
+  sourceFile       String?             @db.Text
+  sourceLine       Int?
+  sourceColumn     Int?
+  mentions         String              @default("[]") @db.Text
+  externalProvider String?
+  externalIssueId  String?
+  externalIssueUrl String?             @db.Text
+  annotations      ColaborateAnnotation[]
 
   @@index([projectName])
   @@index([projectName, status, createdAt])
+  @@index([sessionId])
 }
 
 model ColaborateAnnotation {
@@ -64,6 +75,22 @@ model ColaborateAnnotation {
   createdAt        DateTime         @default(now())
 
   @@index([feedbackId])
+}
+
+model ColaborateSession {
+  id            String   @id @default(cuid())
+  projectName   String
+  reviewerName  String?
+  reviewerEmail String?
+  status        String   @default("drafting")
+  submittedAt   DateTime?
+  triagedAt     DateTime?
+  notes         String?  @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  feedbacks     ColaborateFeedback[]
+
+  @@index([projectName, status])
 }
 `;
 

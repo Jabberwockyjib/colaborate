@@ -24,11 +24,12 @@ const VALID_PRISMA_TYPES = new Set([
 // ---------------------------------------------------------------------------
 
 describe("COLABORATE_MODELS structure", () => {
-  it("contains exactly 2 models: ColaborateFeedback and ColaborateAnnotation", () => {
+  it("contains exactly 3 models: ColaborateFeedback, ColaborateAnnotation, ColaborateSession", () => {
     const modelNames = Object.keys(COLABORATE_MODELS);
-    expect(modelNames).toHaveLength(2);
+    expect(modelNames).toHaveLength(3);
     expect(modelNames).toContain("ColaborateFeedback");
     expect(modelNames).toContain("ColaborateAnnotation");
+    expect(modelNames).toContain("ColaborateSession");
   });
 });
 
@@ -56,6 +57,16 @@ describe("ColaborateFeedback model", () => {
       "resolvedAt",
       "createdAt",
       "updatedAt",
+      "sessionId",
+      "session",
+      "componentId",
+      "sourceFile",
+      "sourceLine",
+      "sourceColumn",
+      "mentions",
+      "externalProvider",
+      "externalIssueId",
+      "externalIssueUrl",
       "annotations",
     ];
 
