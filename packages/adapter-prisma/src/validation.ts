@@ -9,6 +9,11 @@ import * as zod from "zod";
 // See: https://github.com/colinhacks/zod/issues/2697
 const z: typeof zod.z = ("z" in zod ? zod.z : zod) as typeof zod.z;
 
+const mentionSchema = z.object({
+  kind: z.enum(["user", "component"]),
+  handle: z.string().min(1).max(200),
+});
+
 const anchorSchema = z.object({
   cssSelector: z.string().min(1).max(2000),
   xpath: z.string().min(1).max(2000),
@@ -98,6 +103,9 @@ export const feedbackCreateSchema = z.object({
   authorEmail: z.string().email().max(200),
   annotations: z.array(annotationSchema).max(50),
   clientId: z.string().min(1).max(200),
+  sessionId: z.string().min(1).max(200).optional(),
+  componentId: z.string().min(1).max(200).optional(),
+  mentions: z.array(mentionSchema).max(100).default([]),
 });
 
 export const feedbackPatchSchema = z.object({
@@ -159,6 +167,10 @@ export interface FeedbackCreateInput {
   authorEmail: string;
   annotations: AnnotationInput[];
   clientId: string;
+  sessionId?: string | undefined;
+  componentId?: string | undefined;
+  /** Set to [] by schema default when omitted from raw input. */
+  mentions: import("@colaborate/core").Mention[];
 }
 
 export interface FeedbackPatchInput {

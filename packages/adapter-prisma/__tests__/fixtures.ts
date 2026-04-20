@@ -36,3 +36,22 @@ export const validPayloadNoAnnotations = {
   ...validPayload,
   annotations: [] as typeof validPayload.annotations,
 };
+
+export const validMention = {
+  kind: "user" as const,
+  handle: "alice",
+};
+
+export const validPayloadWithMentions = {
+  ...validPayload,
+  sessionId: "session-abc",
+  componentId: "CheckoutButton",
+  mentions: [validMention, { kind: "component" as const, handle: "NavBar" }],
+};
+
+export const validSessionInput = {
+  projectName: "test-project",
+  reviewerName: "Alice",
+  reviewerEmail: "alice@example.com",
+  notes: "First review pass",
+};

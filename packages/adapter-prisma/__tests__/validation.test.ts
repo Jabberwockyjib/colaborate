@@ -183,6 +183,46 @@ describe("feedbackCreateSchema", () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it("accepts payload with sessionId, componentId, mentions", () => {
+    const result = feedbackCreateSchema.safeParse({
+      ...validPayload,
+      sessionId: "sess-1",
+      componentId: "Checkout",
+      mentions: [{ kind: "user", handle: "alice" }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("defaults mentions to [] when omitted", () => {
+    const result = feedbackCreateSchema.safeParse(validPayload);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.mentions).toEqual([]);
+  });
+
+  it("rejects mention with unknown kind", () => {
+    const result = feedbackCreateSchema.safeParse({
+      ...validPayload,
+      mentions: [{ kind: "robot", handle: "a" }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects mention with empty handle", () => {
+    const result = feedbackCreateSchema.safeParse({
+      ...validPayload,
+      mentions: [{ kind: "user", handle: "" }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects over 100 mentions", () => {
+    const result = feedbackCreateSchema.safeParse({
+      ...validPayload,
+      mentions: Array.from({ length: 101 }, (_, i) => ({ kind: "user", handle: `u${i}` })),
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("feedbackPatchSchema", () => {

@@ -22,6 +22,34 @@ function mockPrisma() {
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       count: vi.fn().mockResolvedValue(0),
     },
+    colaborateSession: {
+      create: vi.fn().mockResolvedValue({
+        id: "sess-1",
+        projectName: "test-project",
+        status: "drafting",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        submittedAt: null,
+        triagedAt: null,
+        reviewerName: null,
+        reviewerEmail: null,
+        notes: null,
+      }),
+      findUnique: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([]),
+      update: vi.fn().mockResolvedValue({
+        id: "sess-1",
+        projectName: "test-project",
+        status: "submitted",
+        submittedAt: new Date(),
+        triagedAt: null,
+        reviewerName: null,
+        reviewerEmail: null,
+        notes: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    },
   };
 }
 
@@ -139,6 +167,55 @@ describe("createColaborateHandler", () => {
       expect(flatAnnotation.viewportW).toBe(1920);
       expect(flatAnnotation.viewportH).toBe(1080);
       expect(flatAnnotation.devicePixelRatio).toBe(2);
+    });
+
+    it("serializes mentions to a JSON string before calling the store", async () => {
+      const req = new Request("http://localhost/api/colaborate", {
+        method: "POST",
+        body: JSON.stringify({
+          ...validPayloadNoAnnotations,
+          mentions: [
+            { kind: "user", handle: "alice" },
+            { kind: "component", handle: "NavBar" },
+          ],
+        }),
+      });
+      const res = await handler.POST(req);
+      expect(res.status).toBe(201);
+
+      const args = prisma.colaborateFeedback.create.mock.calls[0][0] as { data: { mentions: string } };
+      expect(typeof args.data.mentions).toBe("string");
+      expect(JSON.parse(args.data.mentions)).toEqual([
+        { kind: "user", handle: "alice" },
+        { kind: "component", handle: "NavBar" },
+      ]);
+    });
+
+    it("passes sessionId + componentId through to the store", async () => {
+      const req = new Request("http://localhost/api/colaborate", {
+        method: "POST",
+        body: JSON.stringify({
+          ...validPayloadNoAnnotations,
+          sessionId: "sess-42",
+          componentId: "Checkout",
+        }),
+      });
+      await handler.POST(req);
+      const args = prisma.colaborateFeedback.create.mock.calls[0][0] as {
+        data: { sessionId: string | null; componentId: string | null };
+      };
+      expect(args.data.sessionId).toBe("sess-42");
+      expect(args.data.componentId).toBe("Checkout");
+    });
+
+    it("defaults mentions to '[]' when omitted from payload", async () => {
+      const req = new Request("http://localhost/api/colaborate", {
+        method: "POST",
+        body: JSON.stringify(validPayloadNoAnnotations),
+      });
+      await handler.POST(req);
+      const args = prisma.colaborateFeedback.create.mock.calls[0][0] as { data: { mentions: string } };
+      expect(args.data.mentions).toBe("[]");
     });
   });
 

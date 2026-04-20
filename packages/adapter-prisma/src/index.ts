@@ -8,6 +8,10 @@ import {
   flattenAnnotation,
   isStoreDuplicate,
   isStoreNotFound,
+  type SessionCreateInput,
+  type SessionRecord,
+  type SessionStatus,
+  serializeMentions,
 } from "@colaborate/core";
 import {
   feedbackCreateSchema,
@@ -18,7 +22,7 @@ import {
 } from "./validation.js";
 
 export type { ColaborateStore } from "@colaborate/core";
-export { flattenAnnotation, StoreDuplicateError, StoreNotFoundError } from "@colaborate/core";
+export { flattenAnnotation, StoreDuplicateError, StoreNotFoundError, serializeMentions } from "@colaborate/core";
 export type {
   FeedbackCreateInput as FeedbackCreateSchemaInput,
   FeedbackDeleteInput,
@@ -45,6 +49,12 @@ export interface ColaboratePrismaClient {
     delete: (args: unknown) => Promise<unknown>;
     deleteMany: (args: unknown) => Promise<unknown>;
     count: (args: unknown) => Promise<number>;
+  };
+  colaborateSession: {
+    create: (args: unknown) => Promise<unknown>;
+    findUnique: (args: unknown) => Promise<unknown | null>;
+    findMany: (args: unknown) => Promise<unknown[]>;
+    update: (args: unknown) => Promise<unknown>;
   };
 }
 
@@ -80,6 +90,15 @@ export class PrismaStore implements ColaborateStore {
         authorName: data.authorName,
         authorEmail: data.authorEmail,
         clientId: data.clientId,
+        sessionId: data.sessionId ?? null,
+        componentId: data.componentId ?? null,
+        sourceFile: data.sourceFile ?? null,
+        sourceLine: data.sourceLine ?? null,
+        sourceColumn: data.sourceColumn ?? null,
+        mentions: data.mentions ?? "[]",
+        externalProvider: data.externalProvider ?? null,
+        externalIssueId: data.externalIssueId ?? null,
+        externalIssueUrl: data.externalIssueUrl ?? null,
         annotations: {
           create: data.annotations.map((ann) => ({
             cssSelector: ann.cssSelector,
@@ -163,6 +182,43 @@ export class PrismaStore implements ColaborateStore {
       // Only need projectName for the check — skip annotations
     })) as { projectName: string } | null;
     return record !== null && record.projectName === projectName;
+  }
+
+  async createSession(data: SessionCreateInput): Promise<SessionRecord> {
+    return (await this.prisma.colaborateSession.create({
+      data: {
+        projectName: data.projectName,
+        reviewerName: data.reviewerName ?? null,
+        reviewerEmail: data.reviewerEmail ?? null,
+        status: "drafting",
+        notes: data.notes ?? null,
+      },
+    })) as SessionRecord;
+  }
+
+  async getSession(id: string): Promise<SessionRecord | null> {
+    return (await this.prisma.colaborateSession.findUnique({
+      where: { id },
+    })) as SessionRecord | null;
+  }
+
+  async listSessions(projectName: string, status?: SessionStatus): Promise<SessionRecord[]> {
+    const where: Record<string, unknown> = { projectName };
+    if (status) where.status = status;
+    return (await this.prisma.colaborateSession.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+    })) as SessionRecord[];
+  }
+
+  async submitSession(id: string): Promise<SessionRecord> {
+    return (await this.prisma.colaborateSession.update({
+      where: { id },
+      data: {
+        status: "submitted",
+        submittedAt: new Date(),
+      },
+    })) as SessionRecord;
   }
 }
 
@@ -357,6 +413,9 @@ export function createColaborateHandler({
           authorName: data.authorName,
           authorEmail: data.authorEmail,
           clientId: data.clientId,
+          sessionId: data.sessionId,
+          componentId: data.componentId,
+          mentions: serializeMentions(data.mentions),
           annotations: data.annotations.map(flattenAnnotation),
         });
 
