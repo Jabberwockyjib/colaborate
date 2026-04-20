@@ -37,8 +37,17 @@ export const fr: Translations = {
   "fab.annotations": "Annotations",
 
   // Annotator
-  "annotator.instruction": "Tracez un rectangle sur la zone \u00e0 commenter",
+  "annotator.instruction": "Choisissez une forme, puis dessinez sur la zone à commenter",
   "annotator.cancel": "Annuler",
+
+  // Shape picker
+  "picker.aria": "Sélecteur de forme",
+  "shape.rectangle": "Rectangle",
+  "shape.circle": "Cercle",
+  "shape.arrow": "Flèche",
+  "shape.line": "Ligne",
+  "shape.textbox": "Texte",
+  "shape.freehand": "Libre",
 
   // Popup
   "popup.ariaLabel": "Formulaire de feedback",

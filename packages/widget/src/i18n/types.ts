@@ -39,6 +39,15 @@ export interface Translations {
   "annotator.instruction": string;
   "annotator.cancel": string;
 
+  // Shape picker (Phase 1c)
+  "picker.aria": string;
+  "shape.rectangle": string;
+  "shape.circle": string;
+  "shape.arrow": string;
+  "shape.line": string;
+  "shape.textbox": string;
+  "shape.freehand": string;
+
   // Popup (annotation form)
   "popup.placeholder": string;
   "popup.textareaAria": string;
