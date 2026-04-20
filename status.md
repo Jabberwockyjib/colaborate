@@ -7,7 +7,7 @@
 | Brainstorm + spec | ✅ | — | — |
 | **Phase 0** — fork + rebrand | ✅ | `e656ff4` | `v0.0.0-fork` |
 | **Phase 1a** — Geometry-as-union data layer | ✅ | `ce24787` | `v0.1.0-phase-1a` |
-| **Phase 1c** — Widget shape UI (picker + 6 drawing modes + shortcuts) | ✅ | `ac27b1d` | `v0.1.1-phase-1c` |
+| **Phase 1c** — Widget shape UI (picker + 6 drawing modes + shortcuts) | ✅ | `f2f141e` | `v0.1.1-phase-1c` |
 
 **Current main branch state — all green:**
 
@@ -35,6 +35,8 @@ All 5 new drawing primitives alongside rectangle, end-to-end — drawing, persis
 ## Phase 1c commit trail
 
 ```
+f2f141e  docs(widget): clarify toRectData is for marker pin positioning, not highlights
+47c4187  docs: status.md + todo.md updated for Phase 1c completion
 ac27b1d  test(e2e): Playwright coverage for all 5 new shape drawing primitives
 93f8624  feat(widget): annotator drives 6 shapes via drawing-modes + picker + shortcuts
 41988d1  feat(widget): shape-picker — 6-button toolbar row for the annotator
@@ -58,7 +60,7 @@ ab5f6c1  feat(widget): add shape keyboard shortcut mapping
 |---|---|---|
 | **1a** | Geometry data layer (types, schema, validation, storage) | ✅ `ce24787` / `v0.1.0-phase-1a` |
 | **1b** | New schema fields: `ColaborateSession`, `sessionId`, `componentId`, `sourceFile/Line/Column`, `mentions[]` | 📝 not yet written |
-| **1c** | Widget UI: shape picker + 5 drawing modes + shortcuts + marker rendering for all shapes | ✅ `ac27b1d` / `v0.1.1-phase-1c` |
+| **1c** | Widget UI: shape picker + 5 drawing modes + shortcuts + marker rendering for all shapes | ✅ `f2f141e` / `v0.1.1-phase-1c` |
 
 Plan 1b is purely additive (new columns, new table) — no breaking changes, ships independently, keeps session drafting + component-aware feedback on the backend. It unblocks Phase 2 (session drafting UX in the widget).
 
@@ -73,7 +75,7 @@ Plan 1b is purely additive (new columns, new table) — no breaking changes, shi
 
 ```bash
 cd /Users/brian/dev/colaborate
-git log --oneline          # 14 commits
+git log --oneline          # 16 commits
 git tag --list             # v0.0.0-fork, v0.1.0-phase-1a, v0.1.1-phase-1c
 bun run test:run           # 831 passing
 bun run test:e2e           # 103 passing, 2 skipped
