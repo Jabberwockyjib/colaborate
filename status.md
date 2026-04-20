@@ -7,14 +7,47 @@
 | Brainstorm + spec | ✅ | — | — |
 | **Phase 0** — fork + rebrand | ✅ | `e656ff4` | `v0.0.0-fork` |
 | **Phase 1a** — Geometry-as-union data layer | ✅ | `ce24787` | `v0.1.0-phase-1a` |
+| **Phase 1b** — Schema extensions (session + 9 extended feedback fields + mentions) | ✅ | `cb22e63` | `v0.2.0-phase-1b` |
 | **Phase 1c** — Widget shape UI (picker + 6 drawing modes + shortcuts) | ✅ | `f2f141e` | `v0.1.1-phase-1c` |
 
 **Current main branch state — all green:**
 
 - `bun run build` → 7/7 packages build
-- `bun run test:run` → **831 / 831 unit tests pass** (was 796; +35 tests across shortcuts, shape-render, drawing-modes, shape-picker, annotator, markers)
-- `bun run test:e2e` → 103/103 Playwright pass, 2 skipped (touch — mobile-only)
-- `bun run lint` → biome clean (156 files)
+- `bun run test:run` → **885 / 885 unit tests pass** (was 831; +54 tests across session store, extended fields, mentions, conformance suite, CLI generator)
+- `bun run test:e2e` → 103/103 Playwright pass, 2 skipped (touch — mobile-only; no widget changes in Phase 1b)
+- `bun run lint` → biome clean (158 files)
+
+## What Phase 1b shipped
+
+Backend-only, purely additive — no widget changes. Unblocks session drafting in Phase 2.
+
+- **New module** `packages/core/src/mentions.ts` — `Mention` type + `MENTION_KINDS` const + `serializeMentions` / `parseMentions` / `EMPTY_MENTIONS`. Mirrors Phase 1a's `geometry.ts` pattern.
+- **New model** `ColaborateSession` — `id` / `projectName` / `reviewerName` / `reviewerEmail` / `status` (`drafting|submitted|triaged|archived`) / `submittedAt` / `triagedAt` / `notes` / timestamps + `@@index([projectName, status])`.
+- **9 new fields on `ColaborateFeedback`** — `sessionId` (+ `SetNull` session relation), `componentId`, `sourceFile/Line/Column`, `mentions` (default `"[]"`), `externalProvider/IssueId/IssueUrl` + `@@index([sessionId])`.
+- **Extended `FEEDBACK_STATUSES`** — from 2 (`open`, `resolved`) to 4 (`draft`, `open`, `triaged`, `resolved`). Superset; existing widget POSTs continue to validate unchanged.
+- **4 new `ColaborateStore` methods** — `createSession`, `getSession`, `listSessions`, `submitSession`. Implemented in Memory, LocalStorage, and Prisma adapters. Memory + LocalStorage run against the extended conformance suite.
+- **Zod validation extensions** — new `mentionSchema` + 3 optional wire-format fields (`sessionId`, `componentId`, `mentions[]`). Server-derived fields (`sourceFile/Line/Column`, `external*`) remain out of the wire format.
+- **POST handler** — serializes `mentions` array to JSON string via `serializeMentions` before passing to the store.
+- **No widget changes** — existing POSTs without new fields still validate (Zod `default` / `optional`); E2E count unchanged at 103 pass / 2 skipped.
+
+## Phase 1b commit trail
+
+```
+cb22e63  test(cli): tighten mentions regex with \b word-boundary
+1792e00  test(cli): prisma generator asserts Phase 1b model + fields
+e720545  chore: clean up Phase 1b regressions before final verification
+2b6f863  feat(adapter-prisma): sessions + extended feedback fields + mentions
+8f4bce8  test(adapter-localstorage): cover sessionsKey isolation + reload round-trip
+636a8ae  feat(adapter-localstorage): sessions + extended feedback fields
+aca43e1  feat(adapter-memory): sessions + extended feedback fields
+3011be1  test(core): mentions-default test actually omits the field
+4d279ad  test(core): extend conformance suite with session + extended-field tests
+65fd268  test: update fixtures for Phase 1b schema additions
+4909c75  feat(core): extend schema with ColaborateSession + 9 new feedback fields
+3aa3833  refactor(core): drop unused SessionUpdateInput; make mentions optional on create
+6efae80  feat(core): add Session types + extended feedback fields
+ede630a  feat(core): add Mention type + serialize/parse helpers
+```
 
 ## What Phase 1c shipped
 
@@ -59,10 +92,10 @@ ab5f6c1  feat(widget): add shape keyboard shortcut mapping
 | Plan | Scope | Status |
 |---|---|---|
 | **1a** | Geometry data layer (types, schema, validation, storage) | ✅ `ce24787` / `v0.1.0-phase-1a` |
-| **1b** | New schema fields: `ColaborateSession`, `sessionId`, `componentId`, `sourceFile/Line/Column`, `mentions[]` | 📝 not yet written |
+| **1b** | New schema fields: `ColaborateSession`, `sessionId`, `componentId`, `sourceFile/Line/Column`, `mentions[]` | ✅ `cb22e63` / `v0.2.0-phase-1b` |
 | **1c** | Widget UI: shape picker + 5 drawing modes + shortcuts + marker rendering for all shapes | ✅ `f2f141e` / `v0.1.1-phase-1c` |
 
-Plan 1b is purely additive (new columns, new table) — no breaking changes, ships independently, keeps session drafting + component-aware feedback on the backend. It unblocks Phase 2 (session drafting UX in the widget).
+Phase 1 is complete. Phase 2 (session drafting UX in the widget) is now unblocked.
 
 ## Outstanding items (unchanged from the prior handoff)
 
@@ -75,9 +108,9 @@ Plan 1b is purely additive (new columns, new table) — no breaking changes, shi
 
 ```bash
 cd /Users/brian/dev/colaborate
-git log --oneline          # 16 commits
-git tag --list             # v0.0.0-fork, v0.1.0-phase-1a, v0.1.1-phase-1c
-bun run test:run           # 831 passing
+git log --oneline          # 30 commits
+git tag --list             # v0.0.0-fork, v0.1.0-phase-1a, v0.1.1-phase-1c, v0.2.0-phase-1b
+bun run test:run           # 885 passing
 bun run test:e2e           # 103 passing, 2 skipped
 ```
 
@@ -89,4 +122,4 @@ Design docs:
 
 ---
 
-*Phase 1c complete. Ready for Plan 1b (schema extensions) whenever convenient — purely additive backend work that unblocks session drafting in Phase 2.*
+*Phase 1 complete (1a + 1b + 1c all ✅). Ready for Phase 2 — session drafting UX in the widget.*
