@@ -603,4 +603,62 @@ describe("Annotator", () => {
       expect(cancelBtn.style.color).not.toBe(hoverColor);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Shape picker + keyboard shortcut (Phase 1c)
+  // -------------------------------------------------------------------------
+
+  describe("shape picker", () => {
+    it("activation mounts 6 shape-picker buttons in the toolbar", () => {
+      bus.emit("annotation:start");
+      const shapeButtons = document.body.querySelectorAll("button[data-shape]");
+      expect(shapeButtons.length).toBe(6);
+    });
+
+    it("rectangle button is active by default", () => {
+      bus.emit("annotation:start");
+      const active = document.body.querySelector<HTMLButtonElement>('button[data-shape="rectangle"]');
+      expect(active?.dataset.active).toBe("true");
+    });
+
+    it("clicking a different shape button flips data-active", () => {
+      bus.emit("annotation:start");
+      const circleBtn = document.body.querySelector<HTMLButtonElement>('button[data-shape="circle"]');
+      expect(circleBtn).not.toBeNull();
+      circleBtn!.click();
+      expect(circleBtn!.dataset.active).toBe("true");
+      const rectBtn = document.body.querySelector<HTMLButtonElement>('button[data-shape="rectangle"]');
+      expect(rectBtn?.dataset.active).not.toBe("true");
+    });
+  });
+
+  describe("shape keyboard shortcuts", () => {
+    it("pressing 'c' while overlay active switches active shape to circle", () => {
+      bus.emit("annotation:start");
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "c", bubbles: true }));
+      const circleBtn = document.body.querySelector<HTMLButtonElement>('button[data-shape="circle"]');
+      expect(circleBtn?.dataset.active).toBe("true");
+    });
+
+    it("is case-insensitive — uppercase 'F' switches to freehand", () => {
+      bus.emit("annotation:start");
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "F", bubbles: true }));
+      const freehandBtn = document.body.querySelector<HTMLButtonElement>('button[data-shape="freehand"]');
+      expect(freehandBtn?.dataset.active).toBe("true");
+    });
+
+    it("pressing a non-shortcut key does not change active shape", () => {
+      bus.emit("annotation:start");
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "x", bubbles: true }));
+      const rectBtn = document.body.querySelector<HTMLButtonElement>('button[data-shape="rectangle"]');
+      expect(rectBtn?.dataset.active).toBe("true");
+    });
+
+    it("pressing Escape still deactivates (not shape-switch)", () => {
+      bus.emit("annotation:start");
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      const overlay = document.body.querySelector<HTMLElement>('div[aria-hidden="true"][tabindex="0"]');
+      expect(overlay).toBeNull();
+    });
+  });
 });

@@ -1,10 +1,15 @@
-import type { AnnotationPayload, FeedbackType, Geometry } from "@colaborate/core";
-import { findAnchorElement, generateAnchor, rectToPercentages } from "./dom/anchor.js";
+import type { AnnotationPayload, FeedbackType, Geometry, Shape } from "@colaborate/core";
+import { findAnchorElement, generateAnchor } from "./dom/anchor.js";
 import { el, setText } from "./dom-utils.js";
+import { createDrawingMode, type DrawingMode } from "./drawing-modes.js";
 import type { EventBus, WidgetEvents } from "./events.js";
 import type { TFunction } from "./i18n/index.js";
 import { Popup } from "./popup.js";
+import { ShapePicker } from "./shape-picker.js";
+import { getShapeFromKey } from "./shortcuts.js";
 import type { ThemeColors } from "./styles/theme.js";
+
+const SVG_NS = "http://www.w3.org/2000/svg";
 
 export interface AnnotationComplete {
   annotation: AnnotationPayload;
@@ -13,19 +18,24 @@ export interface AnnotationComplete {
 }
 
 /**
- * Annotation mode: full-page overlay with rectangle drawing.
+ * Annotation mode: full-page overlay with 6-shape drawing.
  *
  * Glassmorphism design:
- * - Frosted glass toolbar at top
+ * - Frosted glass toolbar at top (instruction + shape picker + cancel)
  * - Subtle tinted overlay
- * - Accent-colored drawing rectangle with glow
+ * - Per-mode preview (div or SVG) rendered inside the overlay
+ *
+ * Drawing is delegated to per-shape DrawingMode classes. The annotator
+ * orchestrates activation/deactivation, picker + shortcut plumbing, and
+ * the handoff from drag-complete to popup to `annotation:complete`.
  */
 export class Annotator {
   private overlay: HTMLElement | null = null;
   private toolbar: HTMLElement | null = null;
-  private drawingRect: HTMLElement | null = null;
-  private startX = 0;
-  private startY = 0;
+  private svgLayer: SVGSVGElement | null = null;
+  private shapePicker: ShapePicker | null = null;
+  private currentMode: DrawingMode | null = null;
+  private currentShape: Shape = "rectangle";
   private isDrawing = false;
   private isActive = false;
   private popup: Popup;
@@ -48,10 +58,8 @@ export class Annotator {
     if (this.isActive) return;
     this.isActive = true;
 
-    // Capture the focused element before activation for keyboard annotation
     this.preActiveFocusElement = document.activeElement;
 
-    // Lock page scroll
     this.savedOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
@@ -65,6 +73,10 @@ export class Annotator {
       `,
     });
     this.overlay.setAttribute("aria-hidden", "true");
+
+    // Single SVG layer shared by SVG-backed modes
+    this.svgLayer = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
+    this.overlay.appendChild(this.svgLayer);
 
     // Toolbar — glassmorphism bar
     this.toolbar = el("div", {
@@ -93,7 +105,6 @@ export class Annotator {
       `,
     });
 
-    // Add pulse animation inline (respects prefers-reduced-motion)
     const style = document.createElement("style");
     style.textContent = [
       "@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}",
@@ -104,7 +115,14 @@ export class Annotator {
     const instruction = el("span", { style: "font-weight:500;letter-spacing:-0.01em;" });
     setText(instruction, this.t("annotator.instruction"));
 
+    // Shape picker
+    this.shapePicker = new ShapePicker(this.colors, this.t, this.currentShape, (shape) => {
+      this.switchShape(shape);
+    });
+
+    // Cancel button
     const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
     cancelBtn.style.cssText = `
       height:34px;padding:0 18px;border-radius:9999px;
       border:1px solid ${this.colors.border};
@@ -128,29 +146,40 @@ export class Annotator {
 
     this.toolbar.appendChild(dot);
     this.toolbar.appendChild(instruction);
+    this.toolbar.appendChild(this.shapePicker.element);
     this.toolbar.appendChild(cancelBtn);
 
-    // Mouse events
+    // Mouse / touch / keyboard listeners
     this.overlay.addEventListener("mousedown", this.onMouseDown);
     this.overlay.addEventListener("mousemove", this.onMouseMove);
     this.overlay.addEventListener("mouseup", this.onMouseUp);
-
-    // Touch events (Surface Pro, iPad, etc.)
     this.overlay.addEventListener("touchstart", this.onTouchStart, { passive: false });
     this.overlay.addEventListener("touchmove", this.onTouchMove, { passive: false });
     this.overlay.addEventListener("touchend", this.onTouchEnd);
-
-    // Keyboard annotation: Enter selects the pre-activation focused element
     this.overlay.addEventListener("keydown", this.onOverlayKeyDown);
-
-    // Allow tab-through so keyboard users can reach underlying elements
     this.overlay.setAttribute("tabindex", "0");
 
-    // Escape to cancel
     document.addEventListener("keydown", this.onKeyDown);
 
     document.body.appendChild(this.overlay);
     document.body.appendChild(this.toolbar);
+
+    // Build initial mode AFTER overlay + svgLayer are in the DOM.
+    this.buildMode();
+  }
+
+  private buildMode(): void {
+    if (!this.overlay || !this.svgLayer) return;
+    this.currentMode?.cancel();
+    this.currentMode = createDrawingMode(this.currentShape, this.overlay, this.svgLayer, this.colors);
+  }
+
+  private switchShape(shape: Shape): void {
+    if (shape === this.currentShape) return;
+    this.currentShape = shape;
+    this.isDrawing = false;
+    this.buildMode();
+    this.shapePicker?.setActive(shape);
   }
 
   private deactivate(): void {
@@ -159,7 +188,6 @@ export class Annotator {
     this.isDrawing = false;
     this.preActiveFocusElement = null;
 
-    // Cancel any pending rAF to prevent stale callbacks
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
@@ -169,18 +197,30 @@ export class Annotator {
     document.body.style.overflow = this.savedOverflow;
     document.removeEventListener("keydown", this.onKeyDown);
 
+    this.currentMode?.cancel();
+    this.currentMode = null;
+    this.shapePicker = null;
+    this.svgLayer = null;
+
     this.overlay?.remove();
     this.toolbar?.remove();
-    this.drawingRect?.remove();
     this.overlay = null;
     this.toolbar = null;
-    this.drawingRect = null;
 
     this.bus.emit("annotation:end");
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {
-    if (e.key === "Escape") this.deactivate();
+    if (e.key === "Escape") {
+      this.deactivate();
+      return;
+    }
+    if (!this.isActive || this.isDrawing) return;
+    const shape = getShapeFromKey(e.key);
+    if (shape) {
+      e.preventDefault();
+      this.switchShape(shape);
+    }
   };
 
   /**
@@ -236,36 +276,22 @@ export class Annotator {
   };
 
   private startDrawing(clientX: number, clientY: number): void {
+    if (!this.currentMode) return;
     this.isDrawing = true;
-    this.startX = clientX;
-    this.startY = clientY;
-
-    this.drawingRect?.remove();
-    this.drawingRect = el("div", {
-      style: `
-        position:fixed;
-        border:2px solid ${this.colors.accent};
-        background:${this.colors.accent}12;
-        pointer-events:none;
-        border-radius:8px;
-        box-shadow:0 0 16px ${this.colors.accentGlow};
-        transition:box-shadow 0.15s ease;
-      `,
-    });
-    this.overlay?.appendChild(this.drawingRect);
+    this.currentMode.start(clientX, clientY);
   }
 
   private onMouseMove = (e: MouseEvent): void => {
-    this.scheduleRectUpdate(e);
+    this.scheduleMove(e);
   };
 
   private onTouchMove = (e: TouchEvent): void => {
     e.preventDefault();
-    if (e.touches[0]) this.scheduleRectUpdate(e.touches[0]);
+    if (e.touches[0]) this.scheduleMove(e.touches[0]);
   };
 
-  private scheduleRectUpdate(source: MouseEvent | Touch): void {
-    if (!this.isDrawing || !this.drawingRect) return;
+  private scheduleMove(source: MouseEvent | Touch): void {
+    if (!this.isDrawing || !this.currentMode) return;
 
     this.pendingMoveEvent = source;
     if (this.rafId !== null) return;
@@ -273,17 +299,8 @@ export class Annotator {
     this.rafId = requestAnimationFrame(() => {
       this.rafId = null;
       const evt = this.pendingMoveEvent;
-      if (!evt || !this.drawingRect) return;
-
-      const x = Math.min(evt.clientX, this.startX);
-      const y = Math.min(evt.clientY, this.startY);
-      const w = Math.abs(evt.clientX - this.startX);
-      const h = Math.abs(evt.clientY - this.startY);
-
-      this.drawingRect.style.left = `${x}px`;
-      this.drawingRect.style.top = `${y}px`;
-      this.drawingRect.style.width = `${w}px`;
-      this.drawingRect.style.height = `${h}px`;
+      if (!evt || !this.currentMode) return;
+      this.currentMode.move(evt.clientX, evt.clientY);
     });
   }
 
@@ -297,70 +314,44 @@ export class Annotator {
   };
 
   private finishDrawing = async (clientX: number, clientY: number): Promise<void> => {
-    if (!this.isDrawing || !this.drawingRect) return;
+    if (!this.isDrawing || !this.currentMode || !this.overlay) return;
     this.isDrawing = false;
 
-    const x = Math.min(clientX, this.startX);
-    const y = Math.min(clientY, this.startY);
-    const w = Math.abs(clientX - this.startX);
-    const h = Math.abs(clientY - this.startY);
+    // First pass: 1-px probe at cursor position to pick an initial anchor.
+    // Mode.finish uses the anchor's bounds to normalize geometry.
+    this.overlay.style.pointerEvents = "none";
+    const probe = new DOMRect(clientX, clientY, 1, 1);
+    let anchorElement = findAnchorElement(probe);
+    this.overlay.style.pointerEvents = "auto";
 
-    // Ignore tiny rectangles (accidental clicks)
-    if (w < 10 || h < 10) {
-      this.drawingRect.remove();
-      this.drawingRect = null;
+    let anchorBounds = anchorElement.getBoundingClientRect();
+    const first = this.currentMode.finish(clientX, clientY, anchorBounds);
+    if (!first) {
+      // Too small — rebuild a fresh mode for the next attempt.
+      this.buildMode();
       return;
     }
 
-    const rectBounds = new DOMRect(x, y, w, h);
+    // Second pass: use the drawn shape's bounding box to pick the best anchor.
+    // Large shapes may have been probed to too-small an element.
+    this.overlay.style.pointerEvents = "none";
+    anchorElement = findAnchorElement(first.bounds);
+    this.overlay.style.pointerEvents = "auto";
+    anchorBounds = anchorElement.getBoundingClientRect();
 
     // Show popup for type + message
-    const result = await this.popup.show(rectBounds);
-
+    const result = await this.popup.show(first.bounds);
     if (!result) {
-      this.drawingRect?.remove();
-      this.drawingRect = null;
+      this.buildMode();
       return;
     }
 
-    // Build annotation payload BEFORE deactivating (needs overlay for elementFromPoint)
-    const annotation = this.buildAnnotation(rectBounds);
-    this.drawingRect?.remove();
-    this.drawingRect = null;
-    this.deactivate();
-
-    // Emit via event bus (not DOM — overlay is already null after deactivate)
-    this.bus.emit("annotation:complete", {
-      annotation,
-      type: result.type,
-      message: result.message,
-    });
-  };
-
-  /**
-   * Build an AnnotationPayload from a drawn rectangle.
-   * Temporarily hides the overlay to access the real DOM underneath.
-   */
-  private buildAnnotation(rectBounds: DOMRect): AnnotationPayload {
-    // Temporarily hide overlay to find the real element underneath
-    if (this.overlay) this.overlay.style.pointerEvents = "none";
-    const anchorElement = findAnchorElement(rectBounds);
-    if (this.overlay) this.overlay.style.pointerEvents = "auto";
-
     const anchor = generateAnchor(anchorElement);
-    const anchorBounds = anchorElement.getBoundingClientRect();
-    const rect = rectToPercentages(rectBounds, anchorBounds);
-    const geometry: Geometry = {
-      shape: "rectangle",
-      x: rect.xPct,
-      y: rect.yPct,
-      w: rect.wPct,
-      h: rect.hPct,
-    };
+    const geometry = rebaseGeometry(first.geometry, first.bounds, anchorBounds, result.message);
 
-    return {
+    const annotation: AnnotationPayload = {
       anchor,
-      shape: "rectangle",
+      shape: geometry.shape,
       geometry,
       scrollX: window.scrollX,
       scrollY: window.scrollY,
@@ -368,9 +359,97 @@ export class Annotator {
       viewportH: window.innerHeight,
       devicePixelRatio: window.devicePixelRatio,
     };
-  }
+
+    this.deactivate();
+
+    this.bus.emit("annotation:complete", {
+      annotation,
+      type: result.type,
+      message: result.message,
+    });
+  };
+
   destroy(): void {
     this.deactivate();
     this.popup.destroy();
+  }
+}
+
+/**
+ * Re-project a Geometry from the original anchor's local frame into a new
+ * anchor's local frame, using the shape's absolute bounding box in client
+ * coordinates. Also fills in textbox.text from the popup message.
+ *
+ * For line/arrow, endpoint ordering is recovered from the sign of the
+ * original fractional deltas (bounds alone doesn't preserve direction).
+ * For freehand, re-projection is skipped — `g.points` are kept as-is because
+ * the original per-point coords can't be recovered from bounds alone. In
+ * practice the first-pass probe anchor and second-pass bounds anchor usually
+ * match for small shapes; on larger shapes the freehand points may be slightly
+ * off but this is acceptable for v0.
+ */
+function rebaseGeometry(g: Geometry, bounds: DOMRect, anchor: DOMRect, message: string): Geometry {
+  switch (g.shape) {
+    case "rectangle":
+      return {
+        shape: "rectangle",
+        x: (bounds.left - anchor.left) / anchor.width,
+        y: (bounds.top - anchor.top) / anchor.height,
+        w: bounds.width / anchor.width,
+        h: bounds.height / anchor.height,
+      };
+    case "textbox":
+      return {
+        shape: "textbox",
+        x: (bounds.left - anchor.left) / anchor.width,
+        y: (bounds.top - anchor.top) / anchor.height,
+        w: bounds.width / anchor.width,
+        h: bounds.height / anchor.height,
+        text: message,
+        fontSize: 14,
+      };
+    case "circle": {
+      const cx = bounds.left + bounds.width / 2;
+      const cy = bounds.top + bounds.height / 2;
+      return {
+        shape: "circle",
+        cx: (cx - anchor.left) / anchor.width,
+        cy: (cy - anchor.top) / anchor.height,
+        rx: bounds.width / 2 / anchor.width,
+        ry: bounds.height / 2 / anchor.height,
+      };
+    }
+    case "line":
+    case "arrow": {
+      // Recover absolute endpoint order from the original fractional deltas.
+      const x1abs = g.x1 < g.x2 ? bounds.left : bounds.right;
+      const y1abs = g.y1 < g.y2 ? bounds.top : bounds.bottom;
+      const x2abs = g.x1 < g.x2 ? bounds.right : bounds.left;
+      const y2abs = g.y1 < g.y2 ? bounds.bottom : bounds.top;
+      if (g.shape === "line") {
+        return {
+          shape: "line",
+          x1: (x1abs - anchor.left) / anchor.width,
+          y1: (y1abs - anchor.top) / anchor.height,
+          x2: (x2abs - anchor.left) / anchor.width,
+          y2: (y2abs - anchor.top) / anchor.height,
+        };
+      }
+      return {
+        shape: "arrow",
+        x1: (x1abs - anchor.left) / anchor.width,
+        y1: (y1abs - anchor.top) / anchor.height,
+        x2: (x2abs - anchor.left) / anchor.width,
+        y2: (y2abs - anchor.top) / anchor.height,
+        headSize: g.headSize,
+      };
+    }
+    case "freehand": {
+      // TODO(phase-1d-or-later): freehand re-projection. Without the original
+      // anchor, we can only fall back to the points already computed. See
+      // JSDoc above. For strokes that span multiple elements, the stored
+      // fractional coords may be relative to the wrong anchor on replay.
+      return g;
+    }
   }
 }
