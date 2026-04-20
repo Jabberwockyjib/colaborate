@@ -8,10 +8,12 @@ const widgetJs = readFileSync(join(__dirname, "../packages/widget/dist/index.js"
 
 /** In-memory feedback store */
 let feedbacks = [];
+let sessions = [];
 let idCounter = 1;
 
 function resetStore() {
   feedbacks = [];
+  sessions = [];
   idCounter = 1;
 }
 
@@ -158,6 +160,7 @@ const server = createServer((req, res) => {
     const projectName = url.searchParams.get("projectName");
     if (projectName) {
       feedbacks = feedbacks.filter(f => f.projectName !== projectName);
+      sessions = sessions.filter(s => s.projectName !== projectName);
     } else {
       resetStore();
     }
@@ -200,7 +203,7 @@ const server = createServer((req, res) => {
           const feedback = {
             id: fbId,
             ...data,
-            status: "open",
+            status: data.status ?? "open",
             resolvedAt: null,
             createdAt: new Date().toISOString(),
             annotations: (data.annotations || []).map((ann) => ({
@@ -247,6 +250,108 @@ const server = createServer((req, res) => {
       });
       return;
     }
+  }
+
+  // Session routes
+  if (url.pathname === "/api/colaborate/sessions") {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+    if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
+
+    if (req.method === "POST") {
+      let body = "";
+      req.on("data", chunk => { body += chunk; });
+      req.on("end", () => {
+        try {
+          const data = JSON.parse(body);
+          if (!data.projectName) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "projectName required" }));
+            return;
+          }
+          const now = new Date().toISOString();
+          const session = {
+            id: `sess-${idCounter++}`,
+            projectName: data.projectName,
+            reviewerName: data.reviewerName ?? null,
+            reviewerEmail: data.reviewerEmail ?? null,
+            status: "drafting",
+            submittedAt: null,
+            triagedAt: null,
+            notes: data.notes ?? null,
+            createdAt: now,
+            updatedAt: now,
+          };
+          sessions.push(session);
+          res.writeHead(201, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(session));
+        } catch {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Invalid JSON" }));
+        }
+      });
+      return;
+    }
+
+    if (req.method === "GET") {
+      const projectName = url.searchParams.get("projectName");
+      const status = url.searchParams.get("status");
+      if (!projectName) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "projectName required" }));
+        return;
+      }
+      let results = sessions.filter(s => s.projectName === projectName);
+      if (status) results = results.filter(s => s.status === status);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(results));
+      return;
+    }
+  }
+
+  // Session submit + single lookup
+  const submitMatch = url.pathname.match(/^\/api\/colaborate\/sessions\/([^/]+)\/submit$/);
+  const singleMatch = url.pathname.match(/^\/api\/colaborate\/sessions\/([^/]+)$/);
+
+  if (submitMatch && req.method === "POST") {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    const id = submitMatch[1];
+    const session = sessions.find(s => s.id === id);
+    if (!session) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Session not found" }));
+      return;
+    }
+    const now = new Date().toISOString();
+    session.status = "submitted";
+    session.submittedAt = now;
+    session.updatedAt = now;
+    // Promote linked drafts to "open"
+    for (const fb of feedbacks) {
+      if (fb.sessionId === id && fb.status === "draft") {
+        fb.status = "open";
+        fb.updatedAt = now;
+      }
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(session));
+    return;
+  }
+
+  if (singleMatch && req.method === "GET") {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    const id = singleMatch[1];
+    const session = sessions.find(s => s.id === id);
+    if (!session) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Session not found" }));
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(session));
+    return;
   }
 
   res.writeHead(404);
