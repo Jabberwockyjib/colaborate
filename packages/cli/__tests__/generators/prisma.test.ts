@@ -107,7 +107,7 @@ describe("syncPrismaModels", () => {
     expect(output).toMatch(/sourceFile\s+String\?/);
     expect(output).toMatch(/sourceLine\s+Int\?/);
     expect(output).toMatch(/sourceColumn\s+Int\?/);
-    expect(output).toMatch(/mentions\s+String/); // not nullable — has default "[]"
+    expect(output).toMatch(/\bmentions\s+String/); // not nullable — has default "[]"
     expect(output).toMatch(/externalProvider\s+String\?/);
     expect(output).toMatch(/externalIssueId\s+String\?/);
     expect(output).toMatch(/externalIssueUrl\s+String\?/);
