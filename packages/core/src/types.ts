@@ -113,6 +113,20 @@ export interface SessionRecord {
   updatedAt: Date;
 }
 
+/** Session record as returned by the API (dates serialized as strings). */
+export interface SessionResponse {
+  id: string;
+  projectName: string;
+  reviewerName: string | null;
+  reviewerEmail: string | null;
+  status: SessionStatus;
+  submittedAt: string | null;
+  triagedAt: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ---------------------------------------------------------------------------
 // Abstract Store — adapter pattern
 // ---------------------------------------------------------------------------

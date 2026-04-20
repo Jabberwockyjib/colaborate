@@ -460,6 +460,51 @@ export function testColaborateStore(factory: () => ColaborateStore): void {
         freshStore();
         await expect(store.submitSession("nope")).rejects.toThrow(StoreNotFoundError);
       });
+
+      it("flips all draft feedbacks in the same session to 'open'", async () => {
+        freshStore();
+        const session = await store.createSession(createSessionInput());
+        const otherSession = await store.createSession(createSessionInput());
+
+        // 2 drafts in the target session
+        await store.createFeedback(
+          createInput({ status: "draft", sessionId: session.id, clientId: "c-a" }),
+        );
+        await store.createFeedback(
+          createInput({ status: "draft", sessionId: session.id, clientId: "c-b" }),
+        );
+        // 1 draft in a different session — must NOT be touched
+        await store.createFeedback(
+          createInput({ status: "draft", sessionId: otherSession.id, clientId: "c-c" }),
+        );
+        // 1 standalone draft (no session) — must NOT be touched
+        await store.createFeedback(createInput({ status: "draft", clientId: "c-d" }));
+
+        await store.submitSession(session.id);
+
+        const { feedbacks } = await store.getFeedbacks({ projectName: "test-project" });
+        const byClient = Object.fromEntries(feedbacks.map((f) => [f.clientId, f.status]));
+        expect(byClient["c-a"]).toBe("open");
+        expect(byClient["c-b"]).toBe("open");
+        expect(byClient["c-c"]).toBe("draft");
+        expect(byClient["c-d"]).toBe("draft");
+      });
+
+      it("does not flip non-draft feedbacks in the same session (e.g. already-resolved ones)", async () => {
+        freshStore();
+        const session = await store.createSession(createSessionInput());
+        await store.createFeedback(
+          createInput({ status: "resolved", sessionId: session.id, clientId: "c-res" }),
+        );
+        await store.createFeedback(
+          createInput({ status: "draft", sessionId: session.id, clientId: "c-draft" }),
+        );
+        await store.submitSession(session.id);
+        const { feedbacks } = await store.getFeedbacks({ projectName: "test-project" });
+        const byClient = Object.fromEntries(feedbacks.map((f) => [f.clientId, f.status]));
+        expect(byClient["c-res"]).toBe("resolved");
+        expect(byClient["c-draft"]).toBe("open");
+      });
     });
 
     // ------------------------------------------------------------------

@@ -24,6 +24,7 @@ export type {
   FeedbackUpdateInput,
   SessionCreateInput,
   SessionRecord,
+  SessionResponse,
   SessionStatus,
 } from "./types.js";
 export {
