@@ -14,6 +14,13 @@ import {
   serializeMentions,
 } from "@colaborate/core";
 import {
+  handleCreateSession,
+  handleGetSession,
+  handleListSessions,
+  handleSubmitSession,
+  matchSessionRoute,
+} from "./routes-sessions.js";
+import {
   feedbackCreateSchema,
   feedbackDeleteSchema,
   feedbackPatchSchema,
@@ -366,8 +373,17 @@ export function createColaborateHandler({
   const publicMethods = publicEndpoints ? new Set(publicEndpoints) : null;
 
   /** Verify Bearer token when apiKey is configured. Skips methods listed in `publicEndpoints`. */
-  function authenticate(request: Request, method: string): Response | null {
+  function authenticate(request: Request, method: string, pathname?: string): Response | null {
     if (!apiKey) return null;
+    // Session routes always require auth when apiKey is set — widget calls them only
+    // after the user has identified themselves and the server has issued a key.
+    if (pathname?.includes("/api/colaborate/sessions")) {
+      const header = request.headers.get("Authorization");
+      if (!header || !safeCompare(header, `Bearer ${apiKey}`)) {
+        return Response.json({ error: "Unauthorized" }, { status: 401 });
+      }
+      return null;
+    }
     if (publicMethods?.has(method as "GET" | "POST" | "PATCH" | "DELETE" | "OPTIONS")) return null;
     const header = request.headers.get("Authorization");
     if (!header || !safeCompare(header, `Bearer ${apiKey}`)) {
@@ -389,6 +405,23 @@ export function createColaborateHandler({
 
     POST: async (request: Request): Promise<Response> => {
       const corsHeaders = buildCorsHeaders(request, allowedOrigins);
+      const pathname = new URL(request.url).pathname;
+      const sessionRoute = matchSessionRoute(pathname, "POST");
+      if (sessionRoute) {
+        const authError = authenticate(request, "POST", pathname);
+        if (authError) return withCors(authError, corsHeaders);
+        try {
+          if (sessionRoute.kind === "create") {
+            return withCors(await handleCreateSession(request, store), corsHeaders);
+          }
+          if (sessionRoute.kind === "submit") {
+            return withCors(await handleSubmitSession(store, sessionRoute.id), corsHeaders);
+          }
+        } catch (error) {
+          console.error("[colaborate] Session route error:", error);
+          return withCors(Response.json({ error: "Internal server error" }, { status: 500 }), corsHeaders);
+        }
+      }
       const authError = authenticate(request, "POST");
       if (authError) return withCors(authError, corsHeaders);
       const body = await request.json().catch(() => null);
@@ -442,6 +475,23 @@ export function createColaborateHandler({
 
     GET: async (request: Request): Promise<Response> => {
       const corsHeaders = buildCorsHeaders(request, allowedOrigins);
+      const pathname = new URL(request.url).pathname;
+      const sessionRoute = matchSessionRoute(pathname, "GET");
+      if (sessionRoute) {
+        const authError = authenticate(request, "GET", pathname);
+        if (authError) return withCors(authError, corsHeaders);
+        try {
+          if (sessionRoute.kind === "list") {
+            return withCors(await handleListSessions(request, store), corsHeaders);
+          }
+          if (sessionRoute.kind === "get") {
+            return withCors(await handleGetSession(store, sessionRoute.id), corsHeaders);
+          }
+        } catch (error) {
+          console.error("[colaborate] Session route error:", error);
+          return withCors(Response.json({ error: "Internal server error" }, { status: 500 }), corsHeaders);
+        }
+      }
       const authError = authenticate(request, "GET");
       if (authError) return withCors(authError, corsHeaders);
 

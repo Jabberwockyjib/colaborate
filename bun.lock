@@ -58,6 +58,7 @@
         "zod": "^3.24.0",
       },
       "devDependencies": {
+        "@colaborate/adapter-memory": "workspace:*",
         "@colaborate/core": "workspace:*",
       },
       "peerDependencies": {
