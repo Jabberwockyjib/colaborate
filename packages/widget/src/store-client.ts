@@ -8,6 +8,7 @@ import {
   type FeedbackStatus,
   type FeedbackType,
   flattenAnnotation,
+  serializeMentions,
 } from "@colaborate/core";
 import type { WidgetClient } from "./api-client.js";
 
@@ -29,13 +30,16 @@ export class StoreClient implements WidgetClient {
       projectName: payload.projectName,
       type: payload.type,
       message: payload.message,
-      status: "open",
+      status: payload.status ?? "open",
       url: payload.url,
       viewport: payload.viewport,
       userAgent: payload.userAgent,
       authorName: payload.authorName,
       authorEmail: payload.authorEmail,
       clientId: payload.clientId,
+      sessionId: payload.sessionId,
+      componentId: payload.componentId,
+      mentions: serializeMentions(payload.mentions ?? []),
       annotations: payload.annotations.map(flattenAnnotation),
     });
 

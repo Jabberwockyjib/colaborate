@@ -20,6 +20,10 @@ function mockStore(): ColaborateStore {
     updateFeedback: vi.fn(),
     deleteFeedback: vi.fn(),
     deleteAllFeedbacks: vi.fn(),
+    createSession: vi.fn(),
+    getSession: vi.fn(),
+    listSessions: vi.fn(),
+    submitSession: vi.fn(),
   };
 }
 
@@ -190,6 +194,48 @@ describe("StoreClient", () => {
       vi.mocked(store.createFeedback).mockResolvedValue(makeFeedbackRecord());
       const response = await client.sendFeedback(samplePayload);
       expect("clientId" in response).toBe(false);
+    });
+
+    it("forwards sessionId, componentId, and mentions to the store", async () => {
+      vi.mocked(store.createFeedback).mockResolvedValue(makeFeedbackRecord());
+
+      const payload: FeedbackPayload = {
+        ...samplePayload,
+        sessionId: "sess-123",
+        componentId: "CheckoutButton",
+        mentions: [
+          { kind: "user", handle: "alice" },
+          { kind: "component", handle: "NavBar" },
+        ],
+      };
+
+      await client.sendFeedback(payload);
+
+      const input = vi.mocked(store.createFeedback).mock.calls[0]![0] as FeedbackCreateInput;
+      expect(input.sessionId).toBe("sess-123");
+      expect(input.componentId).toBe("CheckoutButton");
+      expect(input.mentions).toBe(
+        JSON.stringify([
+          { kind: "user", handle: "alice" },
+          { kind: "component", handle: "NavBar" },
+        ]),
+      );
+    });
+
+    it("defaults mentions to '[]' and sessionId/componentId to undefined when absent", async () => {
+      vi.mocked(store.createFeedback).mockResolvedValue(makeFeedbackRecord());
+      await client.sendFeedback(samplePayload);
+      const input = vi.mocked(store.createFeedback).mock.calls[0]![0] as FeedbackCreateInput;
+      expect(input.sessionId).toBeUndefined();
+      expect(input.componentId).toBeUndefined();
+      expect(input.mentions).toBe("[]");
+    });
+
+    it("forwards explicit status override (e.g. 'draft' for session mode)", async () => {
+      vi.mocked(store.createFeedback).mockResolvedValue(makeFeedbackRecord({ status: "draft" }));
+      await client.sendFeedback({ ...samplePayload, status: "draft" });
+      const input = vi.mocked(store.createFeedback).mock.calls[0]![0] as FeedbackCreateInput;
+      expect(input.status).toBe("draft");
     });
   });
 

@@ -369,6 +369,8 @@ export interface FeedbackPayload {
   componentId?: string | undefined;
   /** Optional — @ mentions on this feedback. Defaults to empty on server when omitted. */
   mentions?: Mention[] | undefined;
+  /** Optional — defaults to "open" server-side. Widget sets "draft" when session mode is active. */
+  status?: FeedbackStatus | undefined;
   /** Client-generated UUID for deduplication */
   clientId: string;
 }
