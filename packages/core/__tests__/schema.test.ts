@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { COLABORATE_MODELS } from "../src/schema.js";
-import type { FeedbackStatus, FeedbackType } from "../src/types.js";
-import { FEEDBACK_STATUSES, FEEDBACK_TYPES } from "../src/types.js";
+import type { FeedbackStatus, FeedbackType, SessionStatus } from "../src/types.js";
+import { FEEDBACK_STATUSES, FEEDBACK_TYPES, SESSION_STATUSES } from "../src/types.js";
 
 // ---------------------------------------------------------------------------
 // Valid Prisma scalar types (non-relation)
@@ -300,7 +300,9 @@ describe("FEEDBACK_STATUSES", () => {
   });
 
   it("contains expected statuses", () => {
+    expect(FEEDBACK_STATUSES).toContain("draft");
     expect(FEEDBACK_STATUSES).toContain("open");
+    expect(FEEDBACK_STATUSES).toContain("triaged");
     expect(FEEDBACK_STATUSES).toContain("resolved");
   });
 
@@ -312,5 +314,28 @@ describe("FEEDBACK_STATUSES", () => {
   it("FeedbackStatus union matches array values (compile-time check)", () => {
     const statuses: readonly FeedbackStatus[] = FEEDBACK_STATUSES;
     expect(statuses).toBe(FEEDBACK_STATUSES);
+  });
+});
+
+describe("SESSION_STATUSES", () => {
+  it("is a non-empty array", () => {
+    expect(SESSION_STATUSES.length).toBeGreaterThan(0);
+  });
+
+  it("contains expected statuses", () => {
+    expect(SESSION_STATUSES).toContain("drafting");
+    expect(SESSION_STATUSES).toContain("submitted");
+    expect(SESSION_STATUSES).toContain("triaged");
+    expect(SESSION_STATUSES).toContain("archived");
+  });
+
+  it("has no duplicate entries", () => {
+    const unique = new Set(SESSION_STATUSES);
+    expect(unique.size).toBe(SESSION_STATUSES.length);
+  });
+
+  it("SessionStatus union matches array values (compile-time check)", () => {
+    const statuses: readonly SessionStatus[] = SESSION_STATUSES;
+    expect(statuses).toBe(SESSION_STATUSES);
   });
 });

@@ -25,7 +25,7 @@ This makes `@colaborate/core` the **single source of truth** for:
 | `ColaborateConfig` | Widget initialization options (endpoint, projectName, position, accentColor, events) |
 | `ColaborateInstance` | Return value of `initColaborate()` — contains `destroy()` |
 | `FeedbackType` | `'question' \| 'change' \| 'bug' \| 'other'` |
-| `FeedbackStatus` | `'open' \| 'resolved'` |
+| `FeedbackStatus` | `'draft' \| 'open' \| 'triaged' \| 'resolved'` |
 | `FeedbackPayload` | Shape of the POST request body sent by the widget |
 | `FeedbackResponse` | Shape of feedback objects returned by the API |
 | `AnnotationPayload` | Annotation data sent with a feedback (anchor + rect + viewport) |
@@ -38,7 +38,7 @@ This makes `@colaborate/core` the **single source of truth** for:
 
 | Export | Description |
 |--------|-------------|
-| `ColaborateStore` | Abstract store interface — 6 methods that every adapter implements |
+| `ColaborateStore` | Abstract store interface — 10 methods that every adapter implements (6 feedback + 4 session) |
 | `StoreNotFoundError` | Error class for missing records (update/delete) |
 | `StoreDuplicateError` | Error class for duplicate `clientId` |
 | `isStoreNotFound(err)` | Type guard — detects `StoreNotFoundError` and Prisma P2025 |
@@ -49,7 +49,7 @@ This makes `@colaborate/core` the **single source of truth** for:
 
 | Export | Description |
 |--------|-------------|
-| `testColaborateStore(factory)` | Conformance test suite — runs 22 tests against any `ColaborateStore` implementation |
+| `testColaborateStore(factory)` | Conformance test suite — runs 39 tests against any `ColaborateStore` implementation (22 feedback + 17 Phase 1b session/extended-field tests) |
 
 ### Schema
 

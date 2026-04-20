@@ -10,6 +10,7 @@ _(nothing in-flight — Phase 1b shipped cleanly)_
   - `submitSession` tied to widget submit action
   - Display session status on markers
   - Depends on: `ColaborateSession`, `sessionId` field, store methods from Phase 1b
+  - **Phase 2 prerequisite — StoreClient.sendFeedback write path:** Phase 1b added `sessionId` / `componentId` / `mentions?: Mention[]` to `FeedbackPayload` but `packages/widget/src/store-client.ts`'s `sendFeedback` ignores them when calling `store.createFeedback` (the `toResponse` read path was updated; the write path was not). Phase 2 must extend `sendFeedback` to forward these three fields (serializing `mentions` via `serializeMentions`) before session UX can work in client-side widget mode. Server-side mode unaffected (ApiClient serializes the full payload as JSON).
 
 ## Phase 2+ (written when Phase 2 lands)
 
