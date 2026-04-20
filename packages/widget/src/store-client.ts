@@ -8,6 +8,8 @@ import {
   type FeedbackStatus,
   type FeedbackType,
   flattenAnnotation,
+  type SessionResponse,
+  type SessionStatus,
   serializeMentions,
 } from "@colaborate/core";
 import type { WidgetClient } from "./api-client.js";
@@ -76,6 +78,29 @@ export class StoreClient implements WidgetClient {
 
   async deleteAllFeedbacks(projectName: string): Promise<void> {
     await this.store.deleteAllFeedbacks(projectName);
+  }
+
+  // Session methods — stubbed to satisfy the WidgetClient interface.
+  // Real implementations land in Task 10.
+  async createSession(_input: {
+    projectName: string;
+    reviewerName?: string;
+    reviewerEmail?: string;
+    notes?: string;
+  }): Promise<SessionResponse> {
+    throw new Error("StoreClient.createSession not implemented yet");
+  }
+
+  async submitSession(_id: string): Promise<SessionResponse> {
+    throw new Error("StoreClient.submitSession not implemented yet");
+  }
+
+  async getSession(_id: string): Promise<SessionResponse | null> {
+    throw new Error("StoreClient.getSession not implemented yet");
+  }
+
+  async listSessions(_projectName: string, _status?: SessionStatus): Promise<SessionResponse[]> {
+    throw new Error("StoreClient.listSessions not implemented yet");
   }
 }
 

@@ -1,4 +1,11 @@
-import type { FeedbackPayload, FeedbackResponse, FeedbackStatus, FeedbackType } from "@colaborate/core";
+import type {
+  FeedbackPayload,
+  FeedbackResponse,
+  FeedbackStatus,
+  FeedbackType,
+  SessionResponse,
+  SessionStatus,
+} from "@colaborate/core";
 
 /**
  * Abstract client interface used by the widget internals.
@@ -15,6 +22,15 @@ export interface WidgetClient {
   resolveFeedback(id: string, resolved: boolean): Promise<FeedbackResponse>;
   deleteFeedback(id: string): Promise<void>;
   deleteAllFeedbacks(projectName: string): Promise<void>;
+  createSession(input: {
+    projectName: string;
+    reviewerName?: string;
+    reviewerEmail?: string;
+    notes?: string;
+  }): Promise<SessionResponse>;
+  submitSession(id: string): Promise<SessionResponse>;
+  getSession(id: string): Promise<SessionResponse | null>;
+  listSessions(projectName: string, status?: SessionStatus): Promise<SessionResponse[]>;
 }
 
 const MAX_RETRIES = 3;
@@ -219,5 +235,57 @@ export class ApiClient {
     if (!response.ok) {
       throw new Error(`Failed to delete all feedbacks: ${response.status}`);
     }
+  }
+
+  async createSession(input: {
+    projectName: string;
+    reviewerName?: string;
+    reviewerEmail?: string;
+    notes?: string;
+  }): Promise<SessionResponse> {
+    const response = await resilientFetch(`${this.endpoint}/sessions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to create session: ${response.status}`);
+    }
+    return (await response.json()) as SessionResponse;
+  }
+
+  async submitSession(id: string): Promise<SessionResponse> {
+    const response = await resilientFetch(`${this.endpoint}/sessions/${encodeURIComponent(id)}/submit`, {
+      method: "POST",
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to submit session: ${response.status}`);
+    }
+    return (await response.json()) as SessionResponse;
+  }
+
+  async getSession(id: string): Promise<SessionResponse | null> {
+    const response = await resilientFetch(`${this.endpoint}/sessions/${encodeURIComponent(id)}`, {
+      method: "GET",
+      cache: "no-store",
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new Error(`Failed to get session: ${response.status}`);
+    }
+    return (await response.json()) as SessionResponse;
+  }
+
+  async listSessions(projectName: string, status?: SessionStatus): Promise<SessionResponse[]> {
+    const params = new URLSearchParams({ projectName });
+    if (status) params.set("status", status);
+    const response = await resilientFetch(`${this.endpoint}/sessions?${params.toString()}`, {
+      method: "GET",
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to list sessions: ${response.status}`);
+    }
+    return (await response.json()) as SessionResponse[];
   }
 }

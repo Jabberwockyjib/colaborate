@@ -177,6 +177,84 @@ describe("ApiClient", () => {
       await expect(client.deleteAllFeedbacks("my-project")).rejects.toThrow("Failed to delete all feedbacks: 400");
     });
   });
+
+  // -----------------------------------------------------------------------
+  // session methods
+  // -----------------------------------------------------------------------
+
+  describe("session methods", () => {
+    const endpoint = "https://api.example.com/api/colaborate";
+    const projectName = "test-project";
+    let client: ApiClient;
+    let fetchMock: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      client = new ApiClient(endpoint, projectName);
+      fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    const sessionRecord = {
+      id: "sess-1",
+      projectName: "test-project",
+      reviewerName: null,
+      reviewerEmail: null,
+      status: "drafting" as const,
+      submittedAt: null,
+      triagedAt: null,
+      notes: null,
+      createdAt: "2026-04-20T00:00:00.000Z",
+      updatedAt: "2026-04-20T00:00:00.000Z",
+    };
+
+    it("createSession POSTs to /sessions with the input body", async () => {
+      fetchMock.mockResolvedValue(new Response(JSON.stringify(sessionRecord), { status: 201 }));
+      const result = await client.createSession({ projectName });
+      expect(fetchMock).toHaveBeenCalledWith(
+        `${endpoint}/sessions`,
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ projectName }),
+        }),
+      );
+      expect(result.id).toBe("sess-1");
+    });
+
+    it("submitSession POSTs to /sessions/:id/submit", async () => {
+      fetchMock.mockResolvedValue(
+        new Response(JSON.stringify({ ...sessionRecord, status: "submitted" }), { status: 200 }),
+      );
+      const result = await client.submitSession("sess-1");
+      expect(fetchMock).toHaveBeenCalledWith(
+        `${endpoint}/sessions/sess-1/submit`,
+        expect.objectContaining({ method: "POST" }),
+      );
+      expect(result.status).toBe("submitted");
+    });
+
+    it("getSession GETs /sessions/:id and returns null on 404", async () => {
+      fetchMock.mockResolvedValue(new Response(JSON.stringify(sessionRecord), { status: 200 }));
+      const found = await client.getSession("sess-1");
+      expect(found?.id).toBe("sess-1");
+
+      fetchMock.mockResolvedValue(new Response("", { status: 404 }));
+      const notFound = await client.getSession("nope");
+      expect(notFound).toBeNull();
+    });
+
+    it("listSessions GETs /sessions?projectName=...&status=...", async () => {
+      fetchMock.mockResolvedValue(new Response(JSON.stringify([sessionRecord]), { status: 200 }));
+      await client.listSessions("test-project", "drafting");
+      const [calledUrl] = fetchMock.mock.calls[0]!;
+      expect(calledUrl).toContain(`${endpoint}/sessions?`);
+      expect(calledUrl).toContain("projectName=test-project");
+      expect(calledUrl).toContain("status=drafting");
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
