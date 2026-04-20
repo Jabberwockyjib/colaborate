@@ -86,21 +86,39 @@ describe("syncPrismaModels", () => {
   // Adding models to an empty schema
   // -----------------------------------------------------------------------
 
-  it("adds both ColaborateFeedback and ColaborateAnnotation to an empty schema", () => {
+  it("adds ColaborateFeedback + ColaborateAnnotation + ColaborateSession to an empty schema", () => {
     writeFileSync(schemaPath, MINIMAL_SCHEMA);
 
     const result = syncPrismaModels(schemaPath);
 
     expect(result.addedModels).toContain("ColaborateFeedback");
     expect(result.addedModels).toContain("ColaborateAnnotation");
-    expect(result.changes).toHaveLength(0); // No field-level changes, models were created fresh
+    expect(result.addedModels).toContain("ColaborateSession");
+    expect(result.changes).toHaveLength(0);
 
-    // Verify the output file contains the models
     const output = readFileSync(schemaPath, "utf-8");
     expect(output).toContain("model ColaborateFeedback");
     expect(output).toContain("model ColaborateAnnotation");
-    expect(output).toContain("projectName");
-    expect(output).toContain("cssSelector");
+    expect(output).toContain("model ColaborateSession");
+
+    // ColaborateFeedback — new fields added in Phase 1b
+    expect(output).toMatch(/sessionId\s+String\?/);
+    expect(output).toMatch(/componentId\s+String\?/);
+    expect(output).toMatch(/sourceFile\s+String\?/);
+    expect(output).toMatch(/sourceLine\s+Int\?/);
+    expect(output).toMatch(/sourceColumn\s+Int\?/);
+    expect(output).toMatch(/mentions\s+String/); // not nullable — has default "[]"
+    expect(output).toMatch(/externalProvider\s+String\?/);
+    expect(output).toMatch(/externalIssueId\s+String\?/);
+    expect(output).toMatch(/externalIssueUrl\s+String\?/);
+
+    // ColaborateSession — fields + @@index
+    expect(output).toMatch(/model ColaborateSession\s*{[\s\S]*?projectName\s+String/);
+    expect(output).toMatch(/model ColaborateSession\s*{[\s\S]*?status\s+String/);
+    expect(output).toMatch(/@@index\(\[projectName, status\]\)/);
+
+    // ColaborateFeedback sessionId index
+    expect(output).toMatch(/@@index\(\[sessionId\]\)/);
   });
 
   it("preserves existing datasource and generator blocks", () => {
