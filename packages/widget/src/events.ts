@@ -59,6 +59,8 @@ export interface WidgetEvents {
   "annotation:complete": [import("./annotator.js").AnnotationComplete];
   "annotations:toggle": [boolean];
   "panel:toggle": [boolean];
+  "session-mode:change": [boolean];
+  "session-panel:toggle": [boolean];
 }
 
 /** Subset of WidgetEvents exposed to consumers via ColaborateInstance */

@@ -5,6 +5,7 @@ import { createDrawingMode, type DrawingMode } from "./drawing-modes.js";
 import type { EventBus, WidgetEvents } from "./events.js";
 import type { TFunction } from "./i18n/index.js";
 import { Popup } from "./popup.js";
+import { SessionToggle } from "./session-toggle.js";
 import { ShapePicker } from "./shape-picker.js";
 import { getShapeFromKey } from "./shortcuts.js";
 import type { ThemeColors } from "./styles/theme.js";
@@ -15,6 +16,8 @@ export interface AnnotationComplete {
   annotation: AnnotationPayload;
   type: FeedbackType;
   message: string;
+  /** Whether session mode was active at the moment of submission. Launcher routes accordingly. */
+  sessionMode: boolean;
 }
 
 /**
@@ -34,6 +37,8 @@ export class Annotator {
   private toolbar: HTMLElement | null = null;
   private svgLayer: SVGSVGElement | null = null;
   private shapePicker: ShapePicker | null = null;
+  private sessionToggle: SessionToggle | null = null;
+  private sessionMode = false;
   private currentMode: DrawingMode | null = null;
   private currentShape: Shape = "rectangle";
   private isDrawing = false;
@@ -147,6 +152,11 @@ export class Annotator {
     this.toolbar.appendChild(dot);
     this.toolbar.appendChild(instruction);
     this.toolbar.appendChild(this.shapePicker.element);
+    this.sessionToggle = new SessionToggle(this.colors, this.t, this.sessionMode, (enabled) => {
+      this.sessionMode = enabled;
+      this.bus.emit("session-mode:change", enabled);
+    });
+    this.toolbar.appendChild(this.sessionToggle.element);
     this.toolbar.appendChild(cancelBtn);
 
     // Mouse / touch / keyboard listeners
@@ -200,6 +210,7 @@ export class Annotator {
     this.currentMode?.cancel();
     this.currentMode = null;
     this.shapePicker = null;
+    this.sessionToggle = null;
     this.svgLayer = null;
 
     this.overlay?.remove();
@@ -262,6 +273,7 @@ export class Annotator {
       annotation,
       type: result.type,
       message: result.message,
+      sessionMode: this.sessionMode,
     });
   };
 
@@ -366,8 +378,15 @@ export class Annotator {
       annotation,
       type: result.type,
       message: result.message,
+      sessionMode: this.sessionMode,
     });
   };
+
+  /** Externally drive the toggle (e.g. on launcher startup from SessionState). */
+  setSessionMode(enabled: boolean): void {
+    this.sessionMode = enabled;
+    this.sessionToggle?.setActive(enabled);
+  }
 
   destroy(): void {
     this.deactivate();
