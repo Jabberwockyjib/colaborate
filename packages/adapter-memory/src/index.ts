@@ -6,6 +6,9 @@ import {
   type FeedbackQuery,
   type FeedbackRecord,
   type FeedbackUpdateInput,
+  type SessionCreateInput,
+  type SessionRecord,
+  type SessionStatus,
   StoreNotFoundError,
 } from "@colaborate/core";
 
@@ -33,6 +36,7 @@ export { StoreDuplicateError, StoreNotFoundError } from "@colaborate/core";
  */
 export class MemoryStore implements ColaborateStore {
   private feedbacks: FeedbackRecord[] = [];
+  private sessions: SessionRecord[] = [];
   private idCounter = 1;
 
   private generateId(): string {
@@ -81,6 +85,15 @@ export class MemoryStore implements ColaborateStore {
       viewport: data.viewport,
       userAgent: data.userAgent,
       clientId: data.clientId,
+      sessionId: data.sessionId ?? null,
+      componentId: data.componentId ?? null,
+      sourceFile: data.sourceFile ?? null,
+      sourceLine: data.sourceLine ?? null,
+      sourceColumn: data.sourceColumn ?? null,
+      mentions: data.mentions ?? "[]",
+      externalProvider: data.externalProvider ?? null,
+      externalIssueId: data.externalIssueId ?? null,
+      externalIssueUrl: data.externalIssueUrl ?? null,
       resolvedAt: null,
       createdAt: now,
       updatedAt: now,
@@ -133,9 +146,48 @@ export class MemoryStore implements ColaborateStore {
     this.feedbacks = this.feedbacks.filter((f) => f.projectName !== projectName);
   }
 
+  async createSession(data: SessionCreateInput): Promise<SessionRecord> {
+    const now = new Date();
+    const record: SessionRecord = {
+      id: this.generateId(),
+      projectName: data.projectName,
+      reviewerName: data.reviewerName ?? null,
+      reviewerEmail: data.reviewerEmail ?? null,
+      status: "drafting",
+      submittedAt: null,
+      triagedAt: null,
+      notes: data.notes ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.sessions.unshift(record);
+    return record;
+  }
+
+  async getSession(id: string): Promise<SessionRecord | null> {
+    return this.sessions.find((s) => s.id === id) ?? null;
+  }
+
+  async listSessions(projectName: string, status?: SessionStatus): Promise<SessionRecord[]> {
+    let results = this.sessions.filter((s) => s.projectName === projectName);
+    if (status) results = results.filter((s) => s.status === status);
+    return results;
+  }
+
+  async submitSession(id: string): Promise<SessionRecord> {
+    const session = this.sessions.find((s) => s.id === id);
+    if (!session) throw new StoreNotFoundError();
+    const now = new Date();
+    session.status = "submitted";
+    session.submittedAt = now;
+    session.updatedAt = now;
+    return session;
+  }
+
   /** Remove all data from this store instance. */
   clear(): void {
     this.feedbacks = [];
+    this.sessions = [];
     this.idCounter = 1;
   }
 }
