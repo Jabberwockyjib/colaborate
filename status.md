@@ -9,13 +9,62 @@
 | **Phase 1a** — Geometry-as-union data layer | ✅ | `ce24787` | `v0.1.0-phase-1a` |
 | **Phase 1b** — Schema extensions (session + 9 extended feedback fields + mentions) | ✅ | `cb22e63` | `v0.2.0-phase-1b` |
 | **Phase 1c** — Widget shape UI (picker + 6 drawing modes + shortcuts) | ✅ | `f2f141e` | `v0.1.1-phase-1c` |
+| **Phase 2** — Widget session drafting UX + session HTTP routes | ✅ | `e930115` | `v0.3.0-phase-2` |
 
 **Current main branch state — all green:**
 
-- `bun run build` → 7/7 packages build
-- `bun run test:run` → **885 / 885 unit tests pass** (was 831; +54 tests across session store, extended fields, mentions, conformance suite, CLI generator)
-- `bun run test:e2e` → 103/103 Playwright pass, 2 skipped (touch — mobile-only; no widget changes in Phase 1b)
-- `bun run lint` → biome clean (158 files)
+- `bun run build` → 7/7 packages build (10/10 check tasks pass)
+- `bun run test:run` → **943 / 943 unit tests pass** (was 885 for Phase 1b; +58 tests across session HTTP routes, submitSession store semantics, SessionState/SessionPanel/SessionToggle widget modules, and the widget StoreClient/ApiClient session methods)
+- `bun run test:e2e` → 109/109 Playwright pass, 2 skipped (touch — mobile-only); +6 new runs (3-draft submit × 3 browsers + non-session regression × 3 browsers)
+- `bun run lint` → biome clean (166 files)
+
+## What Phase 2 shipped
+
+Widget session drafting UX + 4 new HTTP routes + full submit flow, end-to-end.
+
+- **New module** `packages/widget/src/session-state.ts` — `SessionState` class managing `currentSession` + `sessionModeEnabled` in memory and localStorage (keys scoped by `projectName` to isolate across co-hosted projects).
+- **New module** `packages/widget/src/session-panel.ts` — `SessionPanel` glass popover (Shadow DOM) showing the active session's drafts + submit/cancel actions.
+- **New module** `packages/widget/src/session-toggle.ts` — `SessionToggle` pill mounted in the annotator toolbar alongside the ShapePicker.
+- **4 new HTTP routes** in `@colaborate/adapter-prisma`:
+  - `POST   /api/colaborate/sessions` (create drafting)
+  - `POST   /api/colaborate/sessions/:id/submit` (flip to `submitted` + promote drafts to `open` atomically via `$transaction`)
+  - `GET    /api/colaborate/sessions?projectName=…&status=…`
+  - `GET    /api/colaborate/sessions/:id`
+  - Session POSTs require auth when `apiKey` is set; feedback POST remains public to preserve the anonymous widget path.
+- **`SessionResponse`** wire type (dates as strings) alongside `SessionRecord` (Date).
+- **`FeedbackPayload.status`** optional — widget sets `"draft"` in session mode; server defaults to `"open"` when omitted.
+- **`StoreClient.sendFeedback`** forwards `sessionId` / `componentId` / `mentions` (Phase 1b prereq closed).
+- **4 session HTTP methods** on `WidgetClient` (`ApiClient` via HTTP, `StoreClient` via direct store).
+- **FAB gains a 4th radial item** (`session`) that toggles the session panel.
+- **i18n**: 8 new keys in en + fr (toggle labels, panel labels, submit/cancel, success toast).
+- **`submitSession`** flips all `draft` feedbacks linked to the session to `"open"` — atomic in Prisma (`$transaction`), sequential in Memory/LocalStorage. Conformance suite pins the behavior.
+- **E2E coverage**: full 3-draft submit flow + non-session regression × 3 browsers.
+
+## Phase 2 commit trail
+
+```
+add775f  test(e2e): session-mode submit flow + non-session regression
+e8c2325  test(e2e): server.mjs handles session routes + status passthrough
+c5df13e  feat(widget): launcher wires SessionState + SessionPanel + submit flow
+f6e2732  feat(widget): FAB gains a 4th 'session' radial item
+7050e1a  feat(widget): SessionPanel — glass popover for drafts + submit
+233c0f0  feat(widget): annotator hosts SessionToggle + propagates sessionMode
+83651f1  feat(widget): SessionToggle pill for the annotator toolbar
+fd5e5a9  feat(widget): i18n strings for session UX (en + fr)
+d445076  feat(widget): SessionState — in-memory + localStorage session state
+eb68640  feat(widget): StoreClient gains 4 session methods + Date→ISO serialization
+6a6e0fb  feat(widget): ApiClient gains 4 session HTTP methods
+d60a599  refactor(adapter-prisma): explicit isSessionRoute flag + 405 fallthrough
+a188dbc  feat(adapter-prisma): HTTP routes for session CRUD (4 endpoints)
+191b5c6  chore(core): biome-format Task 3 conformance tests
+7a9b385  feat(adapter-prisma): Zod schemas for session create + list-query
+d1a7e96  feat(adapter-prisma): submitSession flips drafts in a $transaction
+1114636  feat(adapter-localstorage): submitSession flips draft feedbacks to "open"
+e453992  feat(adapter-memory): submitSession flips draft feedbacks to "open"
+25712ba  test(core): SessionResponse wire type + submitSession flips drafts
+71002c5  feat(adapter-prisma): POST /api/colaborate accepts optional status override
+f90d299  feat(widget): StoreClient forwards session + mentions fields (Phase 1b prereq)
+```
 
 ## What Phase 1b shipped
 
@@ -87,15 +136,16 @@ ab5f6c1  feat(widget): add shape keyboard shortcut mapping
 - **Freehand re-projection** — when the first-pass (1-px probe) anchor differs from the second-pass (drawn-bounds) anchor, the stored freehand `points` are relative to the first-pass anchor. For strokes confined to a single element this is invisible; for strokes spanning multiple elements the replay may be offset. Tagged `TODO(phase-1d-or-later)` in `annotator.ts`'s `rebaseGeometry` helper.
 - **Popup-open drag race** — the annotator overlay stays active with `pointer-events: auto` during `await popup.show(...)`. A user can start a second drag while the popup is open; the first `finishDrawing` continuation then builds a payload from the first drag and `deactivate()`s, silently discarding the second. Pre-existing from the pre-1c code (not a regression introduced here). Low severity — users rarely click outside a popup they just summoned.
 
-## Phase 1 decomposition — one sub-plan left
+## Phase 1 + Phase 2 decomposition — all complete
 
 | Plan | Scope | Status |
 |---|---|---|
 | **1a** | Geometry data layer (types, schema, validation, storage) | ✅ `ce24787` / `v0.1.0-phase-1a` |
 | **1b** | New schema fields: `ColaborateSession`, `sessionId`, `componentId`, `sourceFile/Line/Column`, `mentions[]` | ✅ `cb22e63` / `v0.2.0-phase-1b` |
 | **1c** | Widget UI: shape picker + 5 drawing modes + shortcuts + marker rendering for all shapes | ✅ `f2f141e` / `v0.1.1-phase-1c` |
+| **2** | Widget session drafting UX + 4 session HTTP routes + submit flow | ✅ `v0.3.0-phase-2` |
 
-Phase 1 is complete. Phase 2 (session drafting UX in the widget) is now unblocked.
+Phases 1 and 2 are complete. Phase 3 (MCP server exposing feedback to Claude Code) is now the next milestone.
 
 ## Outstanding items (unchanged from the prior handoff)
 
@@ -108,10 +158,10 @@ Phase 1 is complete. Phase 2 (session drafting UX in the widget) is now unblocke
 
 ```bash
 cd /Users/brian/dev/colaborate
-git log --oneline          # 30 commits
-git tag --list             # v0.0.0-fork, v0.1.0-phase-1a, v0.1.1-phase-1c, v0.2.0-phase-1b
-bun run test:run           # 885 passing
-bun run test:e2e           # 103 passing, 2 skipped
+git log --oneline          # ~51 commits
+git tag --list             # v0.0.0-fork, v0.1.0-phase-1a, v0.1.1-phase-1c, v0.2.0-phase-1b, v0.3.0-phase-2
+bun run test:run           # 943 passing
+bun run test:e2e           # 109 passing, 2 skipped
 ```
 
 Design docs:
@@ -119,7 +169,9 @@ Design docs:
 - `docs/superpowers/plans/2026-04-18-phase-0-fork-and-rebrand.md` — executed
 - `docs/superpowers/plans/2026-04-18-phase-1a-geometry-union.md` — executed
 - `docs/superpowers/plans/2026-04-20-phase-1c-widget-shape-ui.md` — executed
+- `docs/superpowers/plans/2026-04-20-phase-1b-sessions-and-fields.md` — executed
+- `docs/superpowers/plans/2026-04-20-phase-2-widget-session-ux.md` — executed
 
 ---
 
-*Phase 1 complete (1a + 1b + 1c all ✅). Ready for Phase 2 — session drafting UX in the widget.*
+*Phase 1 complete (1a + 1b + 1c all ✅) and Phase 2 complete (session drafting UX + HTTP routes). Ready for Phase 3 — MCP server exposing feedback to Claude Code.*
