@@ -56,7 +56,8 @@
     "node": ">=18"
   },
   "devDependencies": {
+    "@colaborate/core": "workspace:*",
     "@medv/finder": "^3.2.0",
-    "@colaborate/core": "workspace:*"
+    "perfect-freehand": "^1.2.2"
   }
 }

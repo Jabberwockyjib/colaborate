@@ -10,5 +10,5 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   minify: true,
-  noExternal: ["@medv/finder", "@colaborate/core"],
+  noExternal: ["@medv/finder", "@colaborate/core", "perfect-freehand"],
 });
