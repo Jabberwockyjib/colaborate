@@ -58,12 +58,36 @@ const _COLABORATE_MODELS = {
       resolvedAt: { type: "DateTime", optional: true },
       createdAt: { type: "DateTime", default: "now()" },
       updatedAt: { type: "DateTime", isUpdatedAt: true },
+      sessionId: { type: "String", optional: true },
+      session: {
+        type: "ColaborateSession",
+        optional: true,
+        relation: {
+          kind: "many-to-1",
+          model: "ColaborateSession",
+          fields: ["sessionId"],
+          references: ["id"],
+          onDelete: "SetNull",
+        },
+      },
+      componentId: { type: "String", optional: true },
+      sourceFile: { type: "String", optional: true, nativeType: "Text" },
+      sourceLine: { type: "Int", optional: true },
+      sourceColumn: { type: "Int", optional: true },
+      mentions: { type: "String", default: '"[]"', nativeType: "Text" },
+      externalProvider: { type: "String", optional: true },
+      externalIssueId: { type: "String", optional: true },
+      externalIssueUrl: { type: "String", optional: true, nativeType: "Text" },
       annotations: {
         type: "ColaborateAnnotation",
         relation: { kind: "1-to-many", model: "ColaborateAnnotation" },
       },
     },
-    indexes: [{ fields: ["projectName"] }, { fields: ["projectName", "status", "createdAt"] }],
+    indexes: [
+      { fields: ["projectName"] },
+      { fields: ["projectName", "status", "createdAt"] },
+      { fields: ["sessionId"] },
+    ],
   },
   ColaborateAnnotation: {
     fields: {
@@ -98,6 +122,25 @@ const _COLABORATE_MODELS = {
       createdAt: { type: "DateTime", default: "now()" },
     },
     indexes: [{ fields: ["feedbackId"] }],
+  },
+  ColaborateSession: {
+    fields: {
+      id: { type: "String", isId: true, default: "cuid()" },
+      projectName: { type: "String" },
+      reviewerName: { type: "String", optional: true },
+      reviewerEmail: { type: "String", optional: true },
+      status: { type: "String", default: '"drafting"' },
+      submittedAt: { type: "DateTime", optional: true },
+      triagedAt: { type: "DateTime", optional: true },
+      notes: { type: "String", optional: true, nativeType: "Text" },
+      createdAt: { type: "DateTime", default: "now()" },
+      updatedAt: { type: "DateTime", isUpdatedAt: true },
+      feedbacks: {
+        type: "ColaborateFeedback",
+        relation: { kind: "1-to-many", model: "ColaborateFeedback" },
+      },
+    },
+    indexes: [{ fields: ["projectName", "status"] }],
   },
 } as const satisfies Record<string, ModelDef>;
 
