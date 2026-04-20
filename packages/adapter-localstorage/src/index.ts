@@ -6,6 +6,9 @@ import {
   type FeedbackQuery,
   type FeedbackRecord,
   type FeedbackUpdateInput,
+  type SessionCreateInput,
+  type SessionRecord,
+  type SessionStatus,
   StoreNotFoundError,
 } from "@colaborate/core";
 
@@ -13,10 +16,13 @@ export type { ColaborateStore } from "@colaborate/core";
 export { StoreDuplicateError, StoreNotFoundError } from "@colaborate/core";
 
 const DEFAULT_KEY = "colaborate_feedbacks";
+const DEFAULT_SESSIONS_KEY = "colaborate_sessions";
 
 export interface LocalStorageStoreOptions {
-  /** localStorage key prefix — defaults to `'colaborate_feedbacks'` */
+  /** localStorage key prefix for feedbacks — defaults to `'colaborate_feedbacks'` */
   key?: string;
+  /** localStorage key prefix for sessions — defaults to `'colaborate_sessions'` */
+  sessionsKey?: string;
 }
 
 /**
@@ -40,9 +46,11 @@ export interface LocalStorageStoreOptions {
  */
 export class LocalStorageStore implements ColaborateStore {
   private readonly key: string;
+  private readonly sessionsKey: string;
 
   constructor(options?: LocalStorageStoreOptions) {
     this.key = options?.key ?? DEFAULT_KEY;
+    this.sessionsKey = options?.sessionsKey ?? DEFAULT_SESSIONS_KEY;
   }
 
   // ---------------------------------------------------------------------------
@@ -63,6 +71,25 @@ export class LocalStorageStore implements ColaborateStore {
   private save(feedbacks: FeedbackRecord[]): void {
     try {
       localStorage.setItem(this.key, JSON.stringify(feedbacks));
+    } catch {
+      // localStorage full — silently drop (best-effort persistence)
+    }
+  }
+
+  private loadSessions(): SessionRecord[] {
+    try {
+      const raw = localStorage.getItem(this.sessionsKey);
+      if (!raw) return [];
+      const data = JSON.parse(raw) as SerializedSession[];
+      return data.map(reviveSession);
+    } catch {
+      return [];
+    }
+  }
+
+  private saveSessions(sessions: SessionRecord[]): void {
+    try {
+      localStorage.setItem(this.sessionsKey, JSON.stringify(sessions));
     } catch {
       // localStorage full — silently drop (best-effort persistence)
     }
@@ -124,6 +151,15 @@ export class LocalStorageStore implements ColaborateStore {
       viewport: data.viewport,
       userAgent: data.userAgent,
       clientId: data.clientId,
+      sessionId: data.sessionId ?? null,
+      componentId: data.componentId ?? null,
+      sourceFile: data.sourceFile ?? null,
+      sourceLine: data.sourceLine ?? null,
+      sourceColumn: data.sourceColumn ?? null,
+      mentions: data.mentions ?? "[]",
+      externalProvider: data.externalProvider ?? null,
+      externalIssueId: data.externalIssueId ?? null,
+      externalIssueUrl: data.externalIssueUrl ?? null,
       resolvedAt: null,
       createdAt: now,
       updatedAt: now,
@@ -183,9 +219,52 @@ export class LocalStorageStore implements ColaborateStore {
     this.save(feedbacks);
   }
 
-  /** Remove all data from localStorage for this store key. */
+  async createSession(data: SessionCreateInput): Promise<SessionRecord> {
+    const sessions = this.loadSessions();
+    const now = new Date();
+    const record: SessionRecord = {
+      id: this.generateId(),
+      projectName: data.projectName,
+      reviewerName: data.reviewerName ?? null,
+      reviewerEmail: data.reviewerEmail ?? null,
+      status: "drafting",
+      submittedAt: null,
+      triagedAt: null,
+      notes: data.notes ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    sessions.unshift(record);
+    this.saveSessions(sessions);
+    return record;
+  }
+
+  async getSession(id: string): Promise<SessionRecord | null> {
+    return this.loadSessions().find((s) => s.id === id) ?? null;
+  }
+
+  async listSessions(projectName: string, status?: SessionStatus): Promise<SessionRecord[]> {
+    let results = this.loadSessions().filter((s) => s.projectName === projectName);
+    if (status) results = results.filter((s) => s.status === status);
+    return results;
+  }
+
+  async submitSession(id: string): Promise<SessionRecord> {
+    const sessions = this.loadSessions();
+    const session = sessions.find((s) => s.id === id);
+    if (!session) throw new StoreNotFoundError();
+    const now = new Date();
+    session.status = "submitted";
+    session.submittedAt = now;
+    session.updatedAt = now;
+    this.saveSessions(sessions);
+    return session;
+  }
+
+  /** Remove all data from localStorage for this store's keys. */
   clear(): void {
     localStorage.removeItem(this.key);
+    localStorage.removeItem(this.sessionsKey);
   }
 }
 
@@ -214,5 +293,22 @@ function reviveFeedback(raw: SerializedFeedback): FeedbackRecord {
       ...ann,
       createdAt: new Date(ann.createdAt),
     })),
+  };
+}
+
+interface SerializedSession extends Omit<SessionRecord, "createdAt" | "updatedAt" | "submittedAt" | "triagedAt"> {
+  createdAt: string;
+  updatedAt: string;
+  submittedAt: string | null;
+  triagedAt: string | null;
+}
+
+function reviveSession(raw: SerializedSession): SessionRecord {
+  return {
+    ...raw,
+    createdAt: new Date(raw.createdAt),
+    updatedAt: new Date(raw.updatedAt),
+    submittedAt: raw.submittedAt ? new Date(raw.submittedAt) : null,
+    triagedAt: raw.triagedAt ? new Date(raw.triagedAt) : null,
   };
 }
