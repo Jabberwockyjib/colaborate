@@ -467,16 +467,10 @@ export function testColaborateStore(factory: () => ColaborateStore): void {
         const otherSession = await store.createSession(createSessionInput());
 
         // 2 drafts in the target session
-        await store.createFeedback(
-          createInput({ status: "draft", sessionId: session.id, clientId: "c-a" }),
-        );
-        await store.createFeedback(
-          createInput({ status: "draft", sessionId: session.id, clientId: "c-b" }),
-        );
+        await store.createFeedback(createInput({ status: "draft", sessionId: session.id, clientId: "c-a" }));
+        await store.createFeedback(createInput({ status: "draft", sessionId: session.id, clientId: "c-b" }));
         // 1 draft in a different session — must NOT be touched
-        await store.createFeedback(
-          createInput({ status: "draft", sessionId: otherSession.id, clientId: "c-c" }),
-        );
+        await store.createFeedback(createInput({ status: "draft", sessionId: otherSession.id, clientId: "c-c" }));
         // 1 standalone draft (no session) — must NOT be touched
         await store.createFeedback(createInput({ status: "draft", clientId: "c-d" }));
 
@@ -493,12 +487,8 @@ export function testColaborateStore(factory: () => ColaborateStore): void {
       it("does not flip non-draft feedbacks in the same session (e.g. already-resolved ones)", async () => {
         freshStore();
         const session = await store.createSession(createSessionInput());
-        await store.createFeedback(
-          createInput({ status: "resolved", sessionId: session.id, clientId: "c-res" }),
-        );
-        await store.createFeedback(
-          createInput({ status: "draft", sessionId: session.id, clientId: "c-draft" }),
-        );
+        await store.createFeedback(createInput({ status: "resolved", sessionId: session.id, clientId: "c-res" }));
+        await store.createFeedback(createInput({ status: "draft", sessionId: session.id, clientId: "c-draft" }));
         await store.submitSession(session.id);
         const { feedbacks } = await store.getFeedbacks({ projectName: "test-project" });
         const byClient = Object.fromEntries(feedbacks.map((f) => [f.clientId, f.status]));
