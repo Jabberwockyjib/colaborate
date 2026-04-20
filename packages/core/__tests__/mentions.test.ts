@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  EMPTY_MENTIONS,
-  MENTION_KINDS,
-  type Mention,
-  parseMentions,
-  serializeMentions,
-} from "../src/mentions.js";
+import { EMPTY_MENTIONS, MENTION_KINDS, type Mention, parseMentions, serializeMentions } from "../src/mentions.js";
 
 describe("MENTION_KINDS constant", () => {
   it("enumerates the two kinds", () => {
@@ -24,10 +18,13 @@ describe("serializeMentions / parseMentions round-trip", () => {
   const cases: Array<{ label: string; input: Mention[] }> = [
     { label: "empty", input: [] },
     { label: "single user", input: [{ kind: "user", handle: "alice" }] },
-    { label: "mixed", input: [
-      { kind: "user", handle: "alice" },
-      { kind: "component", handle: "CheckoutButton" },
-    ] },
+    {
+      label: "mixed",
+      input: [
+        { kind: "user", handle: "alice" },
+        { kind: "component", handle: "CheckoutButton" },
+      ],
+    },
   ];
 
   for (const { label, input } of cases) {

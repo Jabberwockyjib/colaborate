@@ -29,10 +29,10 @@ export type {
 export {
   FEEDBACK_STATUSES,
   FEEDBACK_TYPES,
-  SESSION_STATUSES,
   flattenAnnotation,
   isStoreDuplicate,
   isStoreNotFound,
+  SESSION_STATUSES,
   StoreDuplicateError,
   StoreNotFoundError,
 } from "./types.js";

@@ -1,5 +1,5 @@
-import type { Mention } from "./mentions.js";
 import { type Geometry, type Shape, serializeGeometry } from "./geometry.js";
+import type { Mention } from "./mentions.js";
 
 // ---------------------------------------------------------------------------
 // Config
