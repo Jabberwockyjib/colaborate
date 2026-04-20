@@ -373,11 +373,11 @@ export function createColaborateHandler({
   const publicMethods = publicEndpoints ? new Set(publicEndpoints) : null;
 
   /** Verify Bearer token when apiKey is configured. Skips methods listed in `publicEndpoints`. */
-  function authenticate(request: Request, method: string, pathname?: string): Response | null {
+  function authenticate(request: Request, method: string, isSessionRoute = false): Response | null {
     if (!apiKey) return null;
     // Session routes always require auth when apiKey is set — widget calls them only
     // after the user has identified themselves and the server has issued a key.
-    if (pathname?.includes("/api/colaborate/sessions")) {
+    if (isSessionRoute) {
       const header = request.headers.get("Authorization");
       if (!header || !safeCompare(header, `Bearer ${apiKey}`)) {
         return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -408,7 +408,7 @@ export function createColaborateHandler({
       const pathname = new URL(request.url).pathname;
       const sessionRoute = matchSessionRoute(pathname, "POST");
       if (sessionRoute) {
-        const authError = authenticate(request, "POST", pathname);
+        const authError = authenticate(request, "POST", true);
         if (authError) return withCors(authError, corsHeaders);
         try {
           if (sessionRoute.kind === "create") {
@@ -417,6 +417,9 @@ export function createColaborateHandler({
           if (sessionRoute.kind === "submit") {
             return withCors(await handleSubmitSession(store, sessionRoute.id), corsHeaders);
           }
+          // Defensive — matchSessionRoute couples kind to method; this can't happen
+          // in normal flow but we refuse to fall through to feedback-POST handling.
+          return withCors(Response.json({ error: "Method not allowed" }, { status: 405 }), corsHeaders);
         } catch (error) {
           console.error("[colaborate] Session route error:", error);
           return withCors(Response.json({ error: "Internal server error" }, { status: 500 }), corsHeaders);
@@ -478,7 +481,7 @@ export function createColaborateHandler({
       const pathname = new URL(request.url).pathname;
       const sessionRoute = matchSessionRoute(pathname, "GET");
       if (sessionRoute) {
-        const authError = authenticate(request, "GET", pathname);
+        const authError = authenticate(request, "GET", true);
         if (authError) return withCors(authError, corsHeaders);
         try {
           if (sessionRoute.kind === "list") {
@@ -487,6 +490,9 @@ export function createColaborateHandler({
           if (sessionRoute.kind === "get") {
             return withCors(await handleGetSession(store, sessionRoute.id), corsHeaders);
           }
+          // Defensive — matchSessionRoute couples kind to method; this can't happen
+          // in normal flow but we refuse to fall through to feedback-GET handling.
+          return withCors(Response.json({ error: "Method not allowed" }, { status: 405 }), corsHeaders);
         } catch (error) {
           console.error("[colaborate] Session route error:", error);
           return withCors(Response.json({ error: "Internal server error" }, { status: 500 }), corsHeaders);
