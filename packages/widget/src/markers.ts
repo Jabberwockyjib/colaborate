@@ -33,9 +33,14 @@ function toAnchorData(a: Annotation): AnchorData {
 }
 
 /**
- * Extract a fractional rectangle from an annotation for marker placement.
- * Phase 1a: rectangle-only rendering. Non-rectangle shapes (Plan 1c)
- * fall back to the anchor element's bounding box.
+ * Fractional rect used to pin the numbered marker badge to the annotation's
+ * anchor corner. This is NOT the shape highlight — shape-specific highlight
+ * rendering lives in `renderShapeHighlight` (see `shape-render.ts`).
+ *
+ * For a rectangle annotation, the marker pin follows the drawn rect's corner.
+ * For every other shape (circle, arrow, line, textbox, freehand) the pin sits
+ * at the anchor element's corner (full-anchor fractional bounds) — the
+ * highlight overlay renders the actual shape around that pin.
  */
 function toRectData(a: Annotation): RectFraction {
   try {
