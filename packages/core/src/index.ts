@@ -22,10 +22,15 @@ export type {
   FeedbackStatus,
   FeedbackType,
   FeedbackUpdateInput,
+  SessionCreateInput,
+  SessionRecord,
+  SessionStatus,
+  SessionUpdateInput,
 } from "./types.js";
 export {
   FEEDBACK_STATUSES,
   FEEDBACK_TYPES,
+  SESSION_STATUSES,
   flattenAnnotation,
   isStoreDuplicate,
   isStoreNotFound,

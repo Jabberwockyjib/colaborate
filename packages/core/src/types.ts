@@ -1,3 +1,4 @@
+import type { Mention } from "./mentions.js";
 import { type Geometry, type Shape, serializeGeometry } from "./geometry.js";
 
 // ---------------------------------------------------------------------------
@@ -78,9 +79,47 @@ export interface ColaboratePublicEvents {
 export const FEEDBACK_TYPES = ["question", "change", "bug", "other"] as const;
 export type FeedbackType = (typeof FEEDBACK_TYPES)[number];
 
-/** Single source of truth for feedback statuses. */
-export const FEEDBACK_STATUSES = ["open", "resolved"] as const;
+/** Feedback lifecycle. `draft` is the client-side pre-session state; `triaged` is set by the triage worker. */
+export const FEEDBACK_STATUSES = ["draft", "open", "triaged", "resolved"] as const;
 export type FeedbackStatus = (typeof FEEDBACK_STATUSES)[number];
+
+// ---------------------------------------------------------------------------
+// Session
+// ---------------------------------------------------------------------------
+
+/** Review session lifecycle. `drafting` is the widget's local session; `submitted` is posted to the server; `triaged` means the triage worker has processed it; `archived` is a soft delete. */
+export const SESSION_STATUSES = ["drafting", "submitted", "triaged", "archived"] as const;
+export type SessionStatus = (typeof SESSION_STATUSES)[number];
+
+/** Input for creating a session — status defaults to `drafting`. */
+export interface SessionCreateInput {
+  projectName: string;
+  reviewerName?: string | undefined;
+  reviewerEmail?: string | undefined;
+  notes?: string | undefined;
+}
+
+/** Persisted session record returned by the store. */
+export interface SessionRecord {
+  id: string;
+  projectName: string;
+  reviewerName: string | null;
+  reviewerEmail: string | null;
+  status: SessionStatus;
+  submittedAt: Date | null;
+  triagedAt: Date | null;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** Update payload for patching a session — at minimum the status transition. */
+export interface SessionUpdateInput {
+  status: SessionStatus;
+  submittedAt?: Date | null | undefined;
+  triagedAt?: Date | null | undefined;
+  notes?: string | null | undefined;
+}
 
 // ---------------------------------------------------------------------------
 // Abstract Store — adapter pattern
@@ -98,6 +137,20 @@ export interface FeedbackCreateInput {
   authorName: string;
   authorEmail: string;
   clientId: string;
+  /** Optional session this feedback belongs to. */
+  sessionId?: string | null | undefined;
+  /** Opt-in data-colaborate-id of the annotated component. */
+  componentId?: string | null | undefined;
+  /** Source file resolved via sourcemap upload (Phase 4). */
+  sourceFile?: string | null | undefined;
+  sourceLine?: number | null | undefined;
+  sourceColumn?: number | null | undefined;
+  /** Serialized `Mention[]` JSON — see `packages/core/src/mentions.ts`. Defaults to `"[]"` in the store. */
+  mentions: string;
+  /** Tracker integration set by the triage worker (Phase 5). */
+  externalProvider?: string | null | undefined;
+  externalIssueId?: string | null | undefined;
+  externalIssueUrl?: string | null | undefined;
   annotations: AnnotationCreateInput[];
 }
 
@@ -155,6 +208,16 @@ export interface FeedbackRecord {
   resolvedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  sessionId: string | null;
+  componentId: string | null;
+  sourceFile: string | null;
+  sourceLine: number | null;
+  sourceColumn: number | null;
+  /** Serialized `Mention[]` JSON. */
+  mentions: string;
+  externalProvider: string | null;
+  externalIssueId: string | null;
+  externalIssueUrl: string | null;
   annotations: AnnotationRecord[];
 }
 
@@ -287,6 +350,14 @@ export interface ColaborateStore {
   deleteFeedback(id: string): Promise<void>;
   /** Bulk delete all feedbacks for a project. No-op (not error) if none exist. */
   deleteAllFeedbacks(projectName: string): Promise<void>;
+  /** Create a new session. Returns the persisted record with status=`drafting`. */
+  createSession(data: SessionCreateInput): Promise<SessionRecord>;
+  /** Lookup a session by id. Returns `null` (not error) when not found. */
+  getSession(id: string): Promise<SessionRecord | null>;
+  /** List sessions for a project, newest first. Optional status filter. Returns empty array (not error) when none. */
+  listSessions(projectName: string, status?: SessionStatus): Promise<SessionRecord[]>;
+  /** Flip status to `submitted` and stamp `submittedAt`. Throws `StoreNotFoundError` if `id` does not exist. */
+  submitSession(id: string): Promise<SessionRecord>;
 }
 
 /** Payload sent from the widget to the server when submitting feedback. */
@@ -300,6 +371,12 @@ export interface FeedbackPayload {
   authorName: string;
   authorEmail: string;
   annotations: AnnotationPayload[];
+  /** Optional — session the widget is drafting in. */
+  sessionId?: string | undefined;
+  /** Optional — opt-in component tag. */
+  componentId?: string | undefined;
+  /** Optional — @ mentions on this feedback. Defaults to empty on server when omitted. */
+  mentions?: Mention[] | undefined;
   /** Client-generated UUID for deduplication */
   clientId: string;
 }
@@ -363,6 +440,16 @@ export interface FeedbackResponse {
   resolvedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  sessionId: string | null;
+  componentId: string | null;
+  sourceFile: string | null;
+  sourceLine: number | null;
+  sourceColumn: number | null;
+  /** Serialized `Mention[]` JSON. */
+  mentions: string;
+  externalProvider: string | null;
+  externalIssueId: string | null;
+  externalIssueUrl: string | null;
   annotations: AnnotationResponse[];
 }
 

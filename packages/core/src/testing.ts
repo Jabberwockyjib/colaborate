@@ -34,6 +34,7 @@ function createInput(overrides?: Partial<FeedbackCreateInput>): FeedbackCreateIn
     authorName: "Alice",
     authorEmail: "alice@test.com",
     clientId: `client-${Date.now()}-${Math.random()}`,
+    mentions: "[]",
     annotations: [
       {
         cssSelector: "div.main",
