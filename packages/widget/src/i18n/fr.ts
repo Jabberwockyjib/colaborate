@@ -81,4 +81,14 @@ export const fr: Translations = {
 
   // Badge
   "badge.count": "{count} feedbacks non résolus",
+
+  // Session mode (Phase 2)
+  "session.toggle": "Session",
+  "session.toggleAriaLabel": "Activer le mode session",
+  "session.panelTitle": "Session de revue",
+  "session.panelEmpty": "Aucun brouillon pour l'instant. Les annotations faites en mode session s'affichent ici.",
+  "session.submit": "Envoyer la session",
+  "session.cancel": "Abandonner la session",
+  "session.submittedConfirmation": "Session envoyée",
+  "fab.session": "Session",
 };

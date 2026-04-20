@@ -80,6 +80,16 @@ export interface Translations {
 
   // Badge
   "badge.count": string;
+
+  // Session mode (Phase 2)
+  "session.toggle": string;
+  "session.toggleAriaLabel": string;
+  "session.panelTitle": string;
+  "session.panelEmpty": string;
+  "session.submit": string;
+  "session.cancel": string;
+  "session.submittedConfirmation": string;
+  "fab.session": string;
 }
 
 /** A translate function that returns the string for a given key. */

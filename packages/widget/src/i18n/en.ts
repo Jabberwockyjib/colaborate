@@ -81,4 +81,14 @@ export const en: Translations = {
 
   // Badge
   "badge.count": "{count} unresolved feedbacks",
+
+  // Session mode (Phase 2)
+  "session.toggle": "Session",
+  "session.toggleAriaLabel": "Toggle session mode",
+  "session.panelTitle": "Review session",
+  "session.panelEmpty": "No drafts yet. Annotations made while session mode is on will collect here.",
+  "session.submit": "Submit session",
+  "session.cancel": "Discard session",
+  "session.submittedConfirmation": "Session submitted",
+  "fab.session": "Session",
 };
