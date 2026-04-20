@@ -18,6 +18,7 @@ function mockPrisma() {
       update: vi
         .fn()
         .mockResolvedValue({ id: "fb-1", status: "resolved", resolvedAt: new Date().toISOString(), annotations: [] }),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       delete: vi.fn().mockResolvedValue({ id: "fb-1" }),
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       count: vi.fn().mockResolvedValue(0),
@@ -50,6 +51,7 @@ function mockPrisma() {
         updatedAt: new Date(),
       }),
     },
+    $transaction: vi.fn((queries: Promise<unknown>[]) => Promise.all(queries)),
   };
 }
 

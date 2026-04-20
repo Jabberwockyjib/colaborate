@@ -46,6 +46,7 @@ export interface ColaboratePrismaClient {
     findMany: (args: unknown) => Promise<unknown[]>;
     findUnique: (args: unknown) => Promise<unknown | null>;
     update: (args: unknown) => Promise<unknown>;
+    updateMany: (args: unknown) => Promise<{ count: number }>;
     delete: (args: unknown) => Promise<unknown>;
     deleteMany: (args: unknown) => Promise<unknown>;
     count: (args: unknown) => Promise<number>;
@@ -56,6 +57,7 @@ export interface ColaboratePrismaClient {
     findMany: (args: unknown) => Promise<unknown[]>;
     update: (args: unknown) => Promise<unknown>;
   };
+  $transaction: <T>(queries: Array<Promise<unknown>>) => Promise<T[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -212,13 +214,18 @@ export class PrismaStore implements ColaborateStore {
   }
 
   async submitSession(id: string): Promise<SessionRecord> {
-    return (await this.prisma.colaborateSession.update({
-      where: { id },
-      data: {
-        status: "submitted",
-        submittedAt: new Date(),
-      },
-    })) as SessionRecord;
+    const now = new Date();
+    const [updatedSession] = await this.prisma.$transaction([
+      this.prisma.colaborateSession.update({
+        where: { id },
+        data: { status: "submitted", submittedAt: now },
+      }),
+      this.prisma.colaborateFeedback.updateMany({
+        where: { sessionId: id, status: "draft" },
+        data: { status: "open", updatedAt: now },
+      }),
+    ]);
+    return updatedSession as SessionRecord;
   }
 }
 
