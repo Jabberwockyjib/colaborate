@@ -1,5 +1,7 @@
 export type { Geometry, Shape } from "./geometry.js";
 export { geometryFromRect, parseGeometry, SHAPES, serializeGeometry } from "./geometry.js";
+export type { Mention, MentionKind } from "./mentions.js";
+export { EMPTY_MENTIONS, MENTION_KINDS, parseMentions, serializeMentions } from "./mentions.js";
 export type { FieldDef, IndexDef, ModelDef } from "./schema.js";
 export { COLABORATE_MODELS } from "./schema.js";
 export type {
