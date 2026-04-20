@@ -1134,3 +1134,196 @@ test.describe("Phase 1c — per-shape drawing", () => {
     expect(isActive).toBe(true);
   });
 });
+
+test.describe("Session mode", () => {
+  test("reviewer submits 3 drafts in a session; feedbacks flip to 'open'", async ({ page }) => {
+    const project = getProject(page);
+    const s = shadow(page);
+
+    // Enter annotator and toggle session mode ON
+    await s.click(".sp-fab");
+    await s.waitFor('[data-item-id="annotate"]');
+    await s.click('[data-item-id="annotate"]');
+    await page.waitForFunction(() => !!document.querySelector("div[style*='crosshair']"));
+
+    // Toggle session mode (toolbar button lives on document.body)
+    await page.waitForFunction(() => document.querySelector("[data-session-toggle]") !== null);
+    await page.click("[data-session-toggle]");
+
+    // Helper: draw one rectangle, fill popup, wait for the draft to fully persist
+    // (marker count on DOM must reach expectedMarkerCount — markers are added after the
+    // feedback POST succeeds and before the submit bus handler's `submitting` flag is cleared).
+    async function drawOne(msg: string, expectedMarkerCount: number): Promise<void> {
+      const box = await page.locator("#target-element").boundingBox();
+      if (!box) throw new Error("target not found");
+      await page.mouse.move(box.x + 10, box.y + 10);
+      await page.mouse.down();
+      await page.mouse.move(box.x + 200, box.y + 50, { steps: 5 });
+      await page.mouse.up();
+
+      // Wait for a freshly visible popup (the previous submit leaves a hidden one behind)
+      await page.waitForSelector("button[data-type='bug']:visible");
+      await page.click("button[data-type='bug']:visible");
+      await page.waitForSelector("textarea:visible");
+      await page.locator("textarea:visible").fill(msg);
+      await page.evaluate(() => {
+        const btns = document.querySelectorAll("button");
+        for (const b of btns) {
+          const visible = (b as HTMLElement).offsetParent !== null;
+          if (visible && b.textContent === "Send") {
+            b.click();
+            return;
+          }
+        }
+      });
+
+      // Identity modal appears only on the first call; handle if present
+      await page.waitForFunction(
+        (expected) => {
+          const host = document.querySelector("colaborate-widget");
+          const hasIdentity = host?.shadowRoot?.querySelector(".sp-identity-title") !== null;
+          const markerCount =
+            document.getElementById("colaborate-markers")?.querySelectorAll("[data-feedback-id]").length ?? 0;
+          return hasIdentity || markerCount >= expected;
+        },
+        expectedMarkerCount,
+        { timeout: 8000 },
+      );
+
+      const needsIdentity = await page.evaluate(() => {
+        const host = document.querySelector("colaborate-widget");
+        return host?.shadowRoot?.querySelector(".sp-identity-title") !== null;
+      });
+      if (needsIdentity) {
+        await page.evaluate(() => {
+          const host = document.querySelector("colaborate-widget");
+          const sr = host?.shadowRoot;
+          const inputs = sr?.querySelectorAll(".sp-input") as NodeListOf<HTMLInputElement>;
+          if (inputs?.length >= 2) {
+            inputs[0].value = "Test User";
+            inputs[0].dispatchEvent(new Event("input", { bubbles: true }));
+            inputs[1].value = "test@example.com";
+            inputs[1].dispatchEvent(new Event("input", { bubbles: true }));
+          }
+          (sr?.querySelector(".sp-btn-primary") as HTMLElement)?.click();
+        });
+      }
+
+      // Wait for the marker to appear (feedback POST resolved + markers.addFeedback ran)
+      await page.waitForFunction(
+        (expected) =>
+          (document.getElementById("colaborate-markers")?.querySelectorAll("[data-feedback-id]").length ?? 0) >=
+          expected,
+        expectedMarkerCount,
+        { timeout: 10000 },
+      );
+
+      // Wait for the annotator to deactivate (submit handler completes, overlay removed)
+      await page.waitForFunction(() => !document.querySelector("div[style*='crosshair']"), undefined, {
+        timeout: 5000,
+      });
+
+      // Wait for the session panel to re-render with the new draft. refreshSessionPanel
+      // runs AFTER markers.addFeedback, and the submit handler's `submitting` flag is cleared
+      // in its finally block AFTER refreshSessionPanel awaits. Polling the session panel's
+      // draft card count == the latest signal that the submit handler is about to complete.
+      await page.waitForFunction(
+        (expected) => {
+          const host = document.querySelector("colaborate-widget");
+          const cards = host?.shadowRoot?.querySelectorAll("[data-session-draft]") ?? [];
+          return cards.length >= expected;
+        },
+        expectedMarkerCount,
+        { timeout: 5000 },
+      );
+    }
+
+    // Re-enter annotator (needed between subsequent draws because annotator deactivates after each submit)
+    async function reEnterAnnotator() {
+      const isAnnotator = await page.evaluate(() => !!document.querySelector("div[style*='crosshair']"));
+      if (!isAnnotator) {
+        await s.click(".sp-fab");
+        await s.waitFor('[data-item-id="annotate"]');
+        await s.click('[data-item-id="annotate"]');
+        await page.waitForFunction(() => !!document.querySelector("div[style*='crosshair']"));
+      }
+    }
+
+    // Draft 1 — first call triggers session creation + identity modal
+    await drawOne("first draft", 1);
+
+    // Draft 2
+    await reEnterAnnotator();
+    await drawOne("second draft", 2);
+
+    // Draft 3
+    await reEnterAnnotator();
+    await drawOne("third draft", 3);
+
+    // Confirm all 3 drafts persisted with status=draft
+    await page.waitForFunction(
+      async (pn) => {
+        const r = await fetch(`http://localhost:3999/api/colaborate?projectName=${pn}&status=draft`);
+        const d = await r.json();
+        return d.total >= 3;
+      },
+      project,
+      { timeout: 5000 },
+    );
+
+    // Cancel annotator + open session panel via FAB
+    await page.keyboard.press("Escape");
+    await s.click(".sp-fab");
+    await s.waitFor('[data-item-id="session"]');
+    await s.click('[data-item-id="session"]');
+    await s.waitFor(".sp-session-panel");
+
+    // Assert 3 drafts in the panel, then submit
+    const draftCount = await s.count("[data-session-draft]");
+    expect(draftCount).toBe(3);
+    await s.click("[data-session-submit]");
+
+    // Poll until submit completes: 1 submitted session + 3 open feedbacks
+    await page.waitForFunction(
+      async (pn) => {
+        const sRes = await fetch(`http://localhost:3999/api/colaborate/sessions?projectName=${pn}&status=submitted`);
+        const ss = await sRes.json();
+        if (!Array.isArray(ss) || ss.length !== 1) return false;
+        const fRes = await fetch(`http://localhost:3999/api/colaborate?projectName=${pn}&status=open`);
+        const fd = await fRes.json();
+        return fd.total >= 3;
+      },
+      project,
+      { timeout: 5000 },
+    );
+
+    // Final API-level assertions
+    const sessionsRes = await page.request.get(
+      `http://localhost:3999/api/colaborate/sessions?projectName=${project}&status=submitted`,
+    );
+    const sessionsJson = await sessionsRes.json();
+    expect(sessionsJson).toHaveLength(1);
+
+    const openRes = await page.request.get(`http://localhost:3999/api/colaborate?projectName=${project}&status=open`);
+    const openJson = await openRes.json();
+    expect(openJson.total).toBeGreaterThanOrEqual(3);
+    const withSession = openJson.feedbacks.filter(
+      (f: { sessionId: string | null }) => f.sessionId === sessionsJson[0].id,
+    );
+    expect(withSession).toHaveLength(3);
+  });
+
+  test("non-session single-feedback flow still persists status='open' (regression)", async ({ page }) => {
+    const project = getProject(page);
+    // drawShapeAndSubmit helper doesn't toggle session mode — exercises the default path
+    const feedback = await drawShapeAndSubmit(page, "rectangle", "regression: still open");
+    expect(feedback.status).toBe("open");
+    expect(feedback.sessionId).toBeFalsy();
+
+    // No session should exist for this project
+    const res = await page.request.get(`http://localhost:3999/api/colaborate/sessions?projectName=${project}`);
+    const json = await res.json();
+    expect(Array.isArray(json)).toBe(true);
+    expect(json).toHaveLength(0);
+  });
+});
