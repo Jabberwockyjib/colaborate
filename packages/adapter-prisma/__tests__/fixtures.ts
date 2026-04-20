@@ -55,3 +55,10 @@ export const validSessionInput = {
   reviewerEmail: "alice@example.com",
   notes: "First review pass",
 };
+
+export const validSessionBody = {
+  projectName: "test-project",
+  reviewerName: "Alice",
+  reviewerEmail: "alice@example.com",
+  notes: "Review pass",
+};

@@ -129,6 +129,18 @@ export const getQuerySchema = z.object({
   search: z.string().max(200).optional(),
 });
 
+export const sessionCreateBodySchema = z.object({
+  projectName: z.string().min(1).max(200),
+  reviewerName: z.string().min(1).max(200).optional(),
+  reviewerEmail: z.string().email().max(200).optional(),
+  notes: z.string().max(5000).optional(),
+});
+
+export const sessionListQuerySchema = z.object({
+  projectName: z.string().min(1).max(200),
+  status: z.enum(["drafting", "submitted", "triaged", "archived"] as const).optional(),
+});
+
 // ---------------------------------------------------------------------------
 // Explicit public interfaces — decoupled from Zod to keep .d.ts clean
 // ---------------------------------------------------------------------------
@@ -204,6 +216,18 @@ export interface GetQueryInput {
   search?: string | undefined;
 }
 
+export interface SessionCreateBodyInput {
+  projectName: string;
+  reviewerName?: string | undefined;
+  reviewerEmail?: string | undefined;
+  notes?: string | undefined;
+}
+
+export interface SessionListQueryInput {
+  projectName: string;
+  status?: import("@colaborate/core").SessionStatus | undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Type-level assertions: manual interfaces stay in sync with schemas.
 // If a field is added/removed/changed in the schema but not the interface
@@ -218,6 +242,12 @@ type _AssertDelete = zod.z.infer<typeof feedbackDeleteSchema> extends FeedbackDe
 type _AssertDeleteReverse = FeedbackDeleteInput extends zod.z.infer<typeof feedbackDeleteSchema> ? true : never;
 type _AssertQuery = zod.z.infer<typeof getQuerySchema> extends GetQueryInput ? true : never;
 type _AssertQueryReverse = GetQueryInput extends zod.z.infer<typeof getQuerySchema> ? true : never;
+type _AssertSessionCreate = zod.z.infer<typeof sessionCreateBodySchema> extends SessionCreateBodyInput ? true : never;
+type _AssertSessionCreateReverse =
+  SessionCreateBodyInput extends zod.z.infer<typeof sessionCreateBodySchema> ? true : never;
+type _AssertSessionList = zod.z.infer<typeof sessionListQuerySchema> extends SessionListQueryInput ? true : never;
+type _AssertSessionListReverse =
+  SessionListQueryInput extends zod.z.infer<typeof sessionListQuerySchema> ? true : never;
 
 // Suppress unused-variable warnings — assertions are compile-time only
 void (0 as unknown as _AssertCreate);
@@ -228,6 +258,10 @@ void (0 as unknown as _AssertDelete);
 void (0 as unknown as _AssertDeleteReverse);
 void (0 as unknown as _AssertQuery);
 void (0 as unknown as _AssertQueryReverse);
+void (0 as unknown as _AssertSessionCreate);
+void (0 as unknown as _AssertSessionCreateReverse);
+void (0 as unknown as _AssertSessionList);
+void (0 as unknown as _AssertSessionListReverse);
 
 /**
  * Map Zod errors to a flat array of { field, message } objects.
