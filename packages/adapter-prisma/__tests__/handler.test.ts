@@ -217,6 +217,36 @@ describe("createColaborateHandler", () => {
       const args = prisma.colaborateFeedback.create.mock.calls[0][0] as { data: { mentions: string } };
       expect(args.data.mentions).toBe("[]");
     });
+
+    it("accepts optional status: 'draft' and passes it to the store", async () => {
+      const req = new Request("http://localhost/api/colaborate", {
+        method: "POST",
+        body: JSON.stringify({ ...validPayloadNoAnnotations, status: "draft" }),
+      });
+      const res = await handler.POST(req);
+      expect(res.status).toBe(201);
+      const createArg = prisma.colaborateFeedback.create.mock.calls[0]![0] as { data: { status: string } };
+      expect(createArg.data.status).toBe("draft");
+    });
+
+    it("defaults status to 'open' when omitted from body", async () => {
+      const req = new Request("http://localhost/api/colaborate", {
+        method: "POST",
+        body: JSON.stringify(validPayloadNoAnnotations),
+      });
+      await handler.POST(req);
+      const createArg = prisma.colaborateFeedback.create.mock.calls[0]![0] as { data: { status: string } };
+      expect(createArg.data.status).toBe("open");
+    });
+
+    it("rejects invalid status values via Zod", async () => {
+      const req = new Request("http://localhost/api/colaborate", {
+        method: "POST",
+        body: JSON.stringify({ ...validPayloadNoAnnotations, status: "garbage" }),
+      });
+      const res = await handler.POST(req);
+      expect(res.status).toBe(400);
+    });
   });
 
   describe("GET", () => {

@@ -406,7 +406,7 @@ export function createColaborateHandler({
           projectName: data.projectName,
           type: data.type,
           message: data.message,
-          status: "open",
+          status: data.status ?? "open",
           url: data.url,
           viewport: data.viewport,
           userAgent: data.userAgent,

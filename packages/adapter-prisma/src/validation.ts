@@ -106,6 +106,7 @@ export const feedbackCreateSchema = z.object({
   sessionId: z.string().min(1).max(200).optional(),
   componentId: z.string().min(1).max(200).optional(),
   mentions: z.array(mentionSchema).max(100).default([]),
+  status: z.enum(FEEDBACK_STATUSES).optional(),
 });
 
 export const feedbackPatchSchema = z.object({
@@ -171,6 +172,7 @@ export interface FeedbackCreateInput {
   componentId?: string | undefined;
   /** Set to [] by schema default when omitted from raw input. */
   mentions: import("@colaborate/core").Mention[];
+  status?: FeedbackStatus | undefined;
 }
 
 export interface FeedbackPatchInput {
