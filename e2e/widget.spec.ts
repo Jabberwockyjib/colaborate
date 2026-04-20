@@ -86,6 +86,123 @@ function shadow(page: ReturnType<typeof test.extend>) {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 1c helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Helper: open annotator, pick a shape, drag start→end, submit popup, fill identity.
+ * Returns the persisted feedback row from the API.
+ */
+async function drawShapeAndSubmit(
+  page: Page,
+  shape: "rectangle" | "circle" | "arrow" | "line" | "textbox" | "freehand",
+  message: string,
+): Promise<Record<string, unknown>> {
+  const s = shadow(page);
+  await s.click(".sp-fab");
+  await s.waitFor('[data-item-id="annotate"]');
+  await s.click('[data-item-id="annotate"]');
+  await page.waitForFunction(() => !!document.querySelector("div[style*='crosshair']"));
+
+  // Pick the shape via its picker button (lives outside Shadow DOM — on document.body)
+  await page.waitForFunction((sh) => document.querySelector(`button[data-shape="${sh}"]`) !== null, shape);
+  await page.click(`button[data-shape="${shape}"]`);
+
+  // Drag over the target element
+  const box = await page.locator("#target-element").boundingBox();
+  if (!box) throw new Error("target not found");
+  const startX = box.x + 10;
+  const startY = box.y + 10;
+  const endX = box.x + 250;
+  const endY = box.y + 60;
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  if (shape === "freehand") {
+    // Freehand: many intermediate points so getStroke produces ≥ FREEHAND_MIN_POINTS
+    // WebKit fires fewer mousemove events per step, so use more steps to compensate
+    await page.mouse.move(startX + 30, startY + 10, { steps: 10 });
+    await page.mouse.move(startX + 80, startY + 25, { steps: 10 });
+    await page.mouse.move(startX + 140, startY + 45, { steps: 10 });
+    await page.mouse.move(startX + 200, startY + 55, { steps: 10 });
+    await page.mouse.move(endX, endY, { steps: 10 });
+  } else {
+    await page.mouse.move(endX, endY, { steps: 5 });
+  }
+  await page.mouse.up();
+
+  // Popup → Bug type + message
+  await page.waitForSelector("button[data-type='bug']");
+  await page.click("button[data-type='bug']");
+  await page.waitForSelector("textarea");
+  await page.fill("textarea", message);
+
+  // Submit (overlay may intercept pointer events — evaluate to click by text)
+  await page.evaluate(() => {
+    const btns = document.querySelectorAll("button");
+    for (const b of btns) {
+      if (b.textContent === "Send") {
+        b.click();
+        return;
+      }
+    }
+  });
+
+  // Handle identity modal if present
+  await page.waitForFunction(
+    () => {
+      const host = document.querySelector("colaborate-widget");
+      const hasIdentity = host?.shadowRoot?.querySelector(".sp-identity-title") !== null;
+      const hasMarker =
+        (document.getElementById("colaborate-markers")?.querySelectorAll("[data-feedback-id]").length ?? 0) >= 1;
+      return hasIdentity || hasMarker;
+    },
+    undefined,
+    { timeout: 5000 },
+  );
+  const needsIdentity = await page.evaluate(() => {
+    const host = document.querySelector("colaborate-widget");
+    return host?.shadowRoot?.querySelector(".sp-identity-title") !== null;
+  });
+  if (needsIdentity) {
+    await page.evaluate(() => {
+      const host = document.querySelector("colaborate-widget");
+      const sr = host?.shadowRoot;
+      const inputs = sr?.querySelectorAll(".sp-input") as NodeListOf<HTMLInputElement>;
+      if (inputs?.length >= 2) {
+        inputs[0].value = "Test User";
+        inputs[0].dispatchEvent(new Event("input", { bubbles: true }));
+        inputs[1].value = "test@example.com";
+        inputs[1].dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      (sr?.querySelector(".sp-btn-primary") as HTMLElement)?.click();
+    });
+  }
+
+  // Wait for a marker
+  await page.waitForFunction(
+    () => (document.getElementById("colaborate-markers")?.querySelectorAll("[data-feedback-id]").length ?? 0) >= 1,
+    undefined,
+    { timeout: 10000 },
+  );
+
+  // Fetch the persisted feedback
+  const project = getProject(page);
+  await page.waitForFunction(
+    async (pn) => {
+      const r = await fetch(`http://localhost:3999/api/colaborate?projectName=${pn}`);
+      const d = await r.json();
+      return d.total >= 1;
+    },
+    project,
+    { timeout: 5000 },
+  );
+  const res = await page.request.get(`http://localhost:3999/api/colaborate?projectName=${project}`);
+  const data = await res.json();
+  return data.feedbacks[0] as Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -940,5 +1057,80 @@ test.describe("Cleanup", () => {
     const markersGone = await page.evaluate(() => !document.getElementById("colaborate-markers"));
     expect(widgetGone).toBe(true);
     expect(markersGone).toBe(true);
+  });
+});
+
+test.describe("Phase 1c — per-shape drawing", () => {
+  test("draws a circle and persists a circle geometry", async ({ page }) => {
+    const fb = await drawShapeAndSubmit(page, "circle", "Circle feedback");
+    const ann = (fb.annotations as Record<string, unknown>[])[0];
+    expect(ann.shape).toBe("circle");
+    const geom = JSON.parse(ann.geometry as string);
+    expect(geom.shape).toBe("circle");
+    expect(typeof geom.cx).toBe("number");
+    expect(typeof geom.cy).toBe("number");
+    expect(geom.rx).toBeGreaterThan(0);
+    expect(geom.ry).toBeGreaterThan(0);
+  });
+
+  test("draws an arrow and persists an arrow geometry with headSize", async ({ page }) => {
+    const fb = await drawShapeAndSubmit(page, "arrow", "Arrow feedback");
+    const ann = (fb.annotations as Record<string, unknown>[])[0];
+    expect(ann.shape).toBe("arrow");
+    const geom = JSON.parse(ann.geometry as string);
+    expect(geom.shape).toBe("arrow");
+    expect(typeof geom.x1).toBe("number");
+    expect(typeof geom.y1).toBe("number");
+    expect(typeof geom.x2).toBe("number");
+    expect(typeof geom.y2).toBe("number");
+    expect(geom.headSize).toBeGreaterThan(0);
+  });
+
+  test("draws a line and persists a line geometry", async ({ page }) => {
+    const fb = await drawShapeAndSubmit(page, "line", "Line feedback");
+    const ann = (fb.annotations as Record<string, unknown>[])[0];
+    expect(ann.shape).toBe("line");
+    const geom = JSON.parse(ann.geometry as string);
+    expect(geom.shape).toBe("line");
+    expect(typeof geom.x1).toBe("number");
+    expect(typeof geom.x2).toBe("number");
+  });
+
+  test("draws a textbox and persists the popup message as geometry.text", async ({ page }) => {
+    const fb = await drawShapeAndSubmit(page, "textbox", "My textbox note");
+    const ann = (fb.annotations as Record<string, unknown>[])[0];
+    expect(ann.shape).toBe("textbox");
+    const geom = JSON.parse(ann.geometry as string);
+    expect(geom.shape).toBe("textbox");
+    expect(geom.text).toBe("My textbox note");
+    expect(geom.fontSize).toBe(14);
+  });
+
+  test("freehand drag persists a freehand geometry with ≥ 2 points", async ({ page }) => {
+    const fb = await drawShapeAndSubmit(page, "freehand", "Freehand feedback");
+    const ann = (fb.annotations as Record<string, unknown>[])[0];
+    expect(ann.shape).toBe("freehand");
+    const geom = JSON.parse(ann.geometry as string);
+    expect(geom.shape).toBe("freehand");
+    expect(Array.isArray(geom.points)).toBe(true);
+    expect(geom.points.length).toBeGreaterThanOrEqual(2);
+    expect(geom.strokeWidth).toBeGreaterThan(0);
+  });
+
+  test("keyboard shortcut 'C' switches to circle mode", async ({ page }) => {
+    const s = shadow(page);
+    await s.click(".sp-fab");
+    await s.waitFor('[data-item-id="annotate"]');
+    await s.click('[data-item-id="annotate"]');
+    await page.waitForFunction(() => !!document.querySelector("div[style*='crosshair']"));
+
+    await page.keyboard.press("c");
+    await page.waitForFunction(
+      () => document.querySelector('button[data-shape="circle"]')?.getAttribute("data-active") === "true",
+    );
+    const isActive = await page.evaluate(
+      () => document.querySelector('button[data-shape="circle"]')?.getAttribute("data-active") === "true",
+    );
+    expect(isActive).toBe(true);
   });
 });
