@@ -253,11 +253,25 @@ export class LocalStorageStore implements ColaborateStore {
     const sessions = this.loadSessions();
     const session = sessions.find((s) => s.id === id);
     if (!session) throw new StoreNotFoundError();
+
     const now = new Date();
     session.status = "submitted";
     session.submittedAt = now;
     session.updatedAt = now;
     this.saveSessions(sessions);
+
+    // Flip associated drafts and persist feedbacks.
+    const feedbacks = this.load();
+    let changed = false;
+    for (const fb of feedbacks) {
+      if (fb.sessionId === id && fb.status === "draft") {
+        fb.status = "open";
+        fb.updatedAt = now;
+        changed = true;
+      }
+    }
+    if (changed) this.save(feedbacks);
+
     return session;
   }
 
