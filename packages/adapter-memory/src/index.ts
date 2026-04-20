@@ -181,6 +181,13 @@ export class MemoryStore implements ColaborateStore {
     session.status = "submitted";
     session.submittedAt = now;
     session.updatedAt = now;
+    // Flip associated drafts to "open" — they're now real, processable feedbacks.
+    for (const fb of this.feedbacks) {
+      if (fb.sessionId === id && fb.status === "draft") {
+        fb.status = "open";
+        fb.updatedAt = now;
+      }
+    }
     return session;
   }
 
