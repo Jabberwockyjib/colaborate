@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { ColaborateStore, FeedbackCreateInput } from "./types.js";
+import type { ColaborateStore, FeedbackCreateInput, SessionCreateInput } from "./types.js";
 import { StoreNotFoundError } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -55,6 +55,16 @@ function createInput(overrides?: Partial<FeedbackCreateInput>): FeedbackCreateIn
         devicePixelRatio: 2,
       },
     ],
+    ...overrides,
+  };
+}
+
+function createSessionInput(overrides?: Partial<SessionCreateInput>): SessionCreateInput {
+  return {
+    projectName: "test-project",
+    reviewerName: "Alice",
+    reviewerEmail: "alice@test.com",
+    notes: "Initial draft",
     ...overrides,
   };
 }
@@ -342,6 +352,180 @@ export function testColaborateStore(factory: () => ColaborateStore): void {
       it("is a no-op when project has no feedbacks", async () => {
         freshStore();
         await expect(store.deleteAllFeedbacks("nonexistent")).resolves.toBeUndefined();
+      });
+    });
+
+    // ------------------------------------------------------------------
+    // Session lifecycle
+    // ------------------------------------------------------------------
+
+    describe("createSession", () => {
+      it("creates a session with status 'drafting'", async () => {
+        freshStore();
+        const session = await store.createSession(createSessionInput());
+
+        expect(session.id).toBeDefined();
+        expect(session.projectName).toBe("test-project");
+        expect(session.reviewerName).toBe("Alice");
+        expect(session.reviewerEmail).toBe("alice@test.com");
+        expect(session.status).toBe("drafting");
+        expect(session.submittedAt).toBeNull();
+        expect(session.triagedAt).toBeNull();
+        expect(session.notes).toBe("Initial draft");
+        expect(session.createdAt).toBeInstanceOf(Date);
+        expect(session.updatedAt).toBeInstanceOf(Date);
+      });
+
+      it("nulls out omitted optional fields", async () => {
+        freshStore();
+        const session = await store.createSession({ projectName: "p" });
+        expect(session.reviewerName).toBeNull();
+        expect(session.reviewerEmail).toBeNull();
+        expect(session.notes).toBeNull();
+      });
+
+      it("generates unique IDs across calls", async () => {
+        freshStore();
+        const a = await store.createSession(createSessionInput());
+        const b = await store.createSession(createSessionInput());
+        expect(a.id).not.toBe(b.id);
+      });
+    });
+
+    describe("getSession", () => {
+      it("returns the session when found", async () => {
+        freshStore();
+        const created = await store.createSession(createSessionInput());
+        const found = await store.getSession(created.id);
+        expect(found?.id).toBe(created.id);
+      });
+
+      it("returns null when not found", async () => {
+        freshStore();
+        expect(await store.getSession("nope")).toBeNull();
+      });
+    });
+
+    describe("listSessions", () => {
+      it("returns sessions for a project, newest first", async () => {
+        freshStore();
+        const a = await store.createSession(createSessionInput({ projectName: "p", notes: "first" }));
+        const b = await store.createSession(createSessionInput({ projectName: "p", notes: "second" }));
+        const results = await store.listSessions("p");
+        expect(results).toHaveLength(2);
+        expect(results[0]?.id).toBe(b.id);
+        expect(results[1]?.id).toBe(a.id);
+      });
+
+      it("filters by projectName", async () => {
+        freshStore();
+        await store.createSession(createSessionInput({ projectName: "a" }));
+        await store.createSession(createSessionInput({ projectName: "b" }));
+        const results = await store.listSessions("a");
+        expect(results).toHaveLength(1);
+        expect(results[0]?.projectName).toBe("a");
+      });
+
+      it("filters by status when provided", async () => {
+        freshStore();
+        const s1 = await store.createSession(createSessionInput());
+        await store.createSession(createSessionInput());
+        await store.submitSession(s1.id);
+
+        const drafting = await store.listSessions("test-project", "drafting");
+        const submitted = await store.listSessions("test-project", "submitted");
+        expect(drafting).toHaveLength(1);
+        expect(submitted).toHaveLength(1);
+        expect(submitted[0]?.id).toBe(s1.id);
+      });
+
+      it("returns empty array when project has no sessions", async () => {
+        freshStore();
+        expect(await store.listSessions("nonexistent")).toEqual([]);
+      });
+    });
+
+    describe("submitSession", () => {
+      it("flips status to 'submitted' and stamps submittedAt", async () => {
+        freshStore();
+        const session = await store.createSession(createSessionInput());
+        const before = session.updatedAt.getTime();
+        const submitted = await store.submitSession(session.id);
+        expect(submitted.status).toBe("submitted");
+        expect(submitted.submittedAt).toBeInstanceOf(Date);
+        expect(submitted.updatedAt.getTime()).toBeGreaterThanOrEqual(before);
+      });
+
+      it("throws StoreNotFoundError for unknown id", async () => {
+        freshStore();
+        await expect(store.submitSession("nope")).rejects.toThrow(StoreNotFoundError);
+      });
+    });
+
+    // ------------------------------------------------------------------
+    // Extended feedback fields (session + component + source + mentions + tracker)
+    // ------------------------------------------------------------------
+
+    describe("extended feedback fields", () => {
+      it("persists and returns sessionId / componentId / mentions", async () => {
+        freshStore();
+        const session = await store.createSession(createSessionInput());
+        const mentions = JSON.stringify([{ kind: "user", handle: "alice" }]);
+        const fb = await store.createFeedback(
+          createInput({
+            sessionId: session.id,
+            componentId: "CheckoutButton",
+            mentions,
+          }),
+        );
+        expect(fb.sessionId).toBe(session.id);
+        expect(fb.componentId).toBe("CheckoutButton");
+        expect(fb.mentions).toBe(mentions);
+      });
+
+      it("defaults mentions to '[]' when omitted", async () => {
+        freshStore();
+        // Test fixture sets mentions to "[]" explicitly; also verify omitting through the
+        // required-field interface by spreading a new object that keeps mentions.
+        const fb = await store.createFeedback(createInput());
+        expect(fb.mentions).toBe("[]");
+      });
+
+      it("returns null for unset sessionId / componentId / source fields", async () => {
+        freshStore();
+        const fb = await store.createFeedback(createInput());
+        expect(fb.sessionId).toBeNull();
+        expect(fb.componentId).toBeNull();
+        expect(fb.sourceFile).toBeNull();
+        expect(fb.sourceLine).toBeNull();
+        expect(fb.sourceColumn).toBeNull();
+        expect(fb.externalProvider).toBeNull();
+        expect(fb.externalIssueId).toBeNull();
+        expect(fb.externalIssueUrl).toBeNull();
+      });
+
+      it("persists sourceFile / sourceLine / sourceColumn when set", async () => {
+        freshStore();
+        const fb = await store.createFeedback(
+          createInput({ sourceFile: "src/Button.tsx", sourceLine: 42, sourceColumn: 5 }),
+        );
+        expect(fb.sourceFile).toBe("src/Button.tsx");
+        expect(fb.sourceLine).toBe(42);
+        expect(fb.sourceColumn).toBe(5);
+      });
+
+      it("persists externalProvider / externalIssueId / externalIssueUrl when set", async () => {
+        freshStore();
+        const fb = await store.createFeedback(
+          createInput({
+            externalProvider: "github",
+            externalIssueId: "123",
+            externalIssueUrl: "https://github.com/x/y/issues/123",
+          }),
+        );
+        expect(fb.externalProvider).toBe("github");
+        expect(fb.externalIssueId).toBe("123");
+        expect(fb.externalIssueUrl).toBe("https://github.com/x/y/issues/123");
       });
     });
   });
