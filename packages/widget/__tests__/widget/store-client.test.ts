@@ -350,4 +350,52 @@ describe("StoreClient", () => {
       expect(store.deleteAllFeedbacks).toHaveBeenCalledWith("test-project");
     });
   });
+
+  // -----------------------------------------------------------------------
+  // session methods
+  // -----------------------------------------------------------------------
+
+  describe("session methods", () => {
+    const sessionRecord = {
+      id: "sess-1",
+      projectName: "test-project",
+      reviewerName: null,
+      reviewerEmail: null,
+      status: "drafting" as const,
+      submittedAt: null,
+      triagedAt: null,
+      notes: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    it("createSession delegates to store.createSession and serializes dates", async () => {
+      vi.mocked(store.createSession).mockResolvedValue(sessionRecord);
+      const result = await client.createSession({ projectName: "test-project" });
+      expect(store.createSession).toHaveBeenCalledWith({ projectName: "test-project" });
+      expect(result.id).toBe("sess-1");
+      expect(result.createdAt).toBe(now.toISOString());
+      expect(typeof result.createdAt).toBe("string");
+    });
+
+    it("submitSession delegates and returns serialized record", async () => {
+      const submitted = { ...sessionRecord, status: "submitted" as const, submittedAt: now };
+      vi.mocked(store.submitSession).mockResolvedValue(submitted);
+      const result = await client.submitSession("sess-1");
+      expect(store.submitSession).toHaveBeenCalledWith("sess-1");
+      expect(result.status).toBe("submitted");
+      expect(result.submittedAt).toBe(now.toISOString());
+    });
+
+    it("getSession returns null when store returns null", async () => {
+      vi.mocked(store.getSession).mockResolvedValue(null);
+      expect(await client.getSession("nope")).toBeNull();
+    });
+
+    it("listSessions delegates with status filter", async () => {
+      vi.mocked(store.listSessions).mockResolvedValue([sessionRecord]);
+      await client.listSessions("test-project", "drafting");
+      expect(store.listSessions).toHaveBeenCalledWith("test-project", "drafting");
+    });
+  });
 });

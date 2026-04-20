@@ -8,6 +8,7 @@ import {
   type FeedbackStatus,
   type FeedbackType,
   flattenAnnotation,
+  type SessionRecord,
   type SessionResponse,
   type SessionStatus,
   serializeMentions,
@@ -80,27 +81,29 @@ export class StoreClient implements WidgetClient {
     await this.store.deleteAllFeedbacks(projectName);
   }
 
-  // Session methods — stubbed to satisfy the WidgetClient interface.
-  // Real implementations land in Task 10.
-  async createSession(_input: {
+  async createSession(input: {
     projectName: string;
     reviewerName?: string;
     reviewerEmail?: string;
     notes?: string;
   }): Promise<SessionResponse> {
-    throw new Error("StoreClient.createSession not implemented yet");
+    const record = await this.store.createSession(input);
+    return toSessionResponse(record);
   }
 
-  async submitSession(_id: string): Promise<SessionResponse> {
-    throw new Error("StoreClient.submitSession not implemented yet");
+  async submitSession(id: string): Promise<SessionResponse> {
+    const record = await this.store.submitSession(id);
+    return toSessionResponse(record);
   }
 
-  async getSession(_id: string): Promise<SessionResponse | null> {
-    throw new Error("StoreClient.getSession not implemented yet");
+  async getSession(id: string): Promise<SessionResponse | null> {
+    const record = await this.store.getSession(id);
+    return record ? toSessionResponse(record) : null;
   }
 
-  async listSessions(_projectName: string, _status?: SessionStatus): Promise<SessionResponse[]> {
-    throw new Error("StoreClient.listSessions not implemented yet");
+  async listSessions(projectName: string, status?: SessionStatus): Promise<SessionResponse[]> {
+    const records = await this.store.listSessions(projectName, status);
+    return records.map(toSessionResponse);
   }
 }
 
@@ -157,5 +160,20 @@ function toAnnotationResponse(ann: AnnotationRecord): AnnotationResponse {
     viewportH: ann.viewportH,
     devicePixelRatio: ann.devicePixelRatio,
     createdAt: ann.createdAt.toISOString(),
+  };
+}
+
+function toSessionResponse(record: SessionRecord): SessionResponse {
+  return {
+    id: record.id,
+    projectName: record.projectName,
+    reviewerName: record.reviewerName,
+    reviewerEmail: record.reviewerEmail,
+    status: record.status,
+    submittedAt: record.submittedAt?.toISOString() ?? null,
+    triagedAt: record.triagedAt?.toISOString() ?? null,
+    notes: record.notes,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString(),
   };
 }
