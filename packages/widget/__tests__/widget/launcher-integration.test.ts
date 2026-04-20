@@ -21,6 +21,10 @@ vi.mock(new URL("../../src/api-client.js", import.meta.url).pathname, () => ({
     resolveFeedback: vi.fn(),
     deleteFeedback: vi.fn(),
     deleteAllFeedbacks: vi.fn(),
+    createSession: vi.fn(),
+    submitSession: vi.fn(),
+    getSession: vi.fn().mockResolvedValue(null),
+    listSessions: vi.fn().mockResolvedValue([]),
   })),
   flushRetryQueue: vi.fn().mockResolvedValue(undefined),
 }));
@@ -43,6 +47,7 @@ vi.mock(new URL("../../src/annotator.js", import.meta.url).pathname, () => ({
       bus.on("annotation:start", () => {});
       return {
         destroy: vi.fn(),
+        setSessionMode: vi.fn(),
       };
     },
   ),
@@ -158,6 +163,8 @@ describe("launcher — annotation:complete integration", () => {
     capturedBus = null;
     vi.clearAllMocks();
     mockGetIdentity.mockReturnValue({ name: "Test User", email: "test@example.com" });
+    // Clear per-project session-state keys so next test's hydrate() doesn't fire getSession
+    localStorage.clear();
   });
 
   // -------------------------------------------------------------------------
@@ -262,8 +269,8 @@ describe("launcher — annotation:complete integration", () => {
       // No identity modal should appear — identity was stored
       const widget = document.querySelector("colaborate-widget");
       const shadow = widget?.shadowRoot;
-      // If there's a dialog it's the identity modal
-      const modal = shadow?.querySelector('[role="dialog"]') ?? null;
+      // Identity modal has aria-modal="true" (session panel is role=dialog only)
+      const modal = shadow?.querySelector('[role="dialog"][aria-modal="true"]') ?? null;
       expect(modal).toBeNull();
 
       instance.destroy();
@@ -284,8 +291,8 @@ describe("launcher — annotation:complete integration", () => {
         expect(widget).not.toBeNull();
         const shadow = widget!.shadowRoot;
         if (shadow) {
-          // Modal should be present inside the shadow root
-          const modal = shadow.querySelector('[role="dialog"]');
+          // Identity modal has aria-modal="true" (session panel is role=dialog only)
+          const modal = shadow.querySelector('[role="dialog"][aria-modal="true"]');
           expect(modal).not.toBeNull();
         }
       });

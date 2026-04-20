@@ -30,6 +30,10 @@ vi.mock("../../src/api-client.js", () => ({
     resolveFeedback: vi.fn(),
     deleteFeedback: vi.fn(),
     deleteAllFeedbacks: vi.fn(),
+    createSession: vi.fn(),
+    submitSession: vi.fn(),
+    getSession: vi.fn().mockResolvedValue(null),
+    listSessions: vi.fn().mockResolvedValue([]),
   })),
   flushRetryQueue: vi.fn().mockResolvedValue(undefined),
 }));
@@ -50,7 +54,7 @@ vi.mock(new URL("../../src/annotator.js", import.meta.url).pathname, () => ({
     ) => {
       annotatorCapture.bus = bus;
       bus.on("annotation:start", () => {});
-      return { destroy: vi.fn() };
+      return { destroy: vi.fn(), setSessionMode: vi.fn() };
     },
   ),
 }));
@@ -96,6 +100,11 @@ function defaultConfig(overrides: Partial<ColaborateConfig> = {}): ColaborateCon
 // ---------------------------------------------------------------------------
 
 describe("launch", () => {
+  beforeEach(() => {
+    // Clear per-project session-state keys so hydrate() doesn't fire getSession
+    localStorage.clear();
+  });
+
   afterEach(() => {
     // Clean up any colaborate-widget elements left in the DOM
     for (const el of document.querySelectorAll("colaborate-widget")) {

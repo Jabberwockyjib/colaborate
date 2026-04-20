@@ -1,4 +1,10 @@
-import type { ColaborateConfig, ColaborateInstance, ColaboratePublicEvents, FeedbackPayload } from "@colaborate/core";
+import type {
+  ColaborateConfig,
+  ColaborateInstance,
+  ColaboratePublicEvents,
+  FeedbackPayload,
+  FeedbackResponse,
+} from "@colaborate/core";
 import { Annotator } from "./annotator.js";
 import { ApiClient, flushRetryQueue, type WidgetClient } from "./api-client.js";
 import { EventBus, type PublicWidgetEvents, type WidgetEvents } from "./events.js";
@@ -7,6 +13,8 @@ import { createT, type TFunction } from "./i18n/index.js";
 import { getIdentity, type Identity, saveIdentity } from "./identity.js";
 import { MarkerManager } from "./markers.js";
 import { Panel } from "./panel.js";
+import { SessionPanel } from "./session-panel.js";
+import { SessionState } from "./session-state.js";
 import { StoreClient } from "./store-client.js";
 import { buildStyles } from "./styles/base.js";
 import { buildThemeColors } from "./styles/theme.js";
@@ -173,6 +181,62 @@ export function launch(config: ColaborateConfig): ColaborateInstance {
   const panel = new Panel(shadow, colors, bus, client, config.projectName, markers, t, locale);
   const annotator = new Annotator(colors, bus, t);
 
+  // Session state + panel (Phase 2)
+  const sessionState = new SessionState(client, config.projectName);
+  const sessionPanel = new SessionPanel(shadow, colors, t, {
+    onSubmit: async () => {
+      try {
+        await sessionState.submitSession();
+        liveRegion.textContent = t("session.submittedConfirmation");
+        sessionPanel.render(null, []);
+        sessionPanel.close();
+        annotator.setSessionMode(false);
+        sessionState.setSessionMode(false);
+        await panel.refresh();
+      } catch (err) {
+        bus.emit("feedback:error", err instanceof Error ? err : new Error(String(err)));
+      }
+    },
+    onCancel: () => {
+      sessionState.cancelSession();
+      sessionPanel.render(null, []);
+      sessionPanel.close();
+    },
+  });
+
+  annotator.setSessionMode(sessionState.sessionModeEnabled);
+
+  // Toggle session mode from the annotator toolbar
+  bus.on("session-mode:change", (enabled) => {
+    sessionState.setSessionMode(enabled);
+  });
+
+  // Toggle session panel from the FAB
+  bus.on("session-panel:toggle", async () => {
+    if (!sessionPanel.isOpen) {
+      await refreshSessionPanel();
+    }
+    sessionPanel.toggle();
+  });
+
+  async function refreshSessionPanel(): Promise<void> {
+    const current = sessionState.currentSession;
+    if (!current) {
+      sessionPanel.render(null, []);
+      return;
+    }
+    try {
+      const { feedbacks } = await client.getFeedbacks(config.projectName, { limit: 50, status: "draft" });
+      const drafts = feedbacks.filter((f: FeedbackResponse) => f.sessionId === current.id);
+      sessionPanel.render(current, drafts);
+    } catch {
+      sessionPanel.render(current, []);
+    }
+  }
+
+  // Hydrate any resumed session (no-op when no local id stored)
+  sessionState.hydrate().catch(() => {});
+
   // Handle annotation completion via event bus (not DOM events)
   // Concurrency guard: prevent duplicate submissions if user draws two annotations quickly
   let submitting = false;
@@ -180,7 +244,7 @@ export function launch(config: ColaborateConfig): ColaborateInstance {
     if (submitting) return;
     submitting = true;
     try {
-      const { annotation, type, message } = data;
+      const { annotation, type, message, sessionMode } = data;
 
       // Ensure identity
       let identity = getIdentity();
@@ -208,6 +272,14 @@ export function launch(config: ColaborateConfig): ColaborateInstance {
         }
       })();
 
+      let sessionId: string | undefined;
+      let status: "draft" | "open" = "open";
+      if (sessionMode) {
+        const session = await sessionState.beginSession();
+        sessionId = session.id;
+        status = "draft";
+      }
+
       const payload: FeedbackPayload = {
         projectName: config.projectName,
         type,
@@ -219,6 +291,7 @@ export function launch(config: ColaborateConfig): ColaborateInstance {
         authorEmail: identity.email,
         annotations: [annotation],
         clientId,
+        ...(sessionId ? { sessionId, status } : {}),
       };
 
       try {
@@ -226,7 +299,11 @@ export function launch(config: ColaborateConfig): ColaborateInstance {
         bus.emit("feedback:sent", response);
         markers.addFeedback(response, markers.count + 1);
         liveRegion.textContent = t("feedback.sent.confirmation");
-        await panel.refresh();
+        if (sessionMode) {
+          await refreshSessionPanel();
+        } else {
+          await panel.refresh();
+        }
       } catch (error) {
         bus.emit("feedback:error", error instanceof Error ? error : new Error(String(error)));
         liveRegion.textContent = t("feedback.error.message");
@@ -259,6 +336,7 @@ export function launch(config: ColaborateConfig): ColaborateInstance {
       unsubAnnotation();
       fab.destroy();
       panel.destroy();
+      sessionPanel.destroy();
       annotator.destroy();
       markers.destroy();
       tooltip.destroy();
