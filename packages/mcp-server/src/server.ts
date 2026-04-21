@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerAllTools } from "./tools/index.js";
 import type { ServerContext } from "./types.js";
 
 /** Constant so the same version string flows to both package.json and the MCP handshake. */
@@ -18,9 +19,7 @@ export function createColaborateMcpServer(context: ServerContext): McpServer {
     version: MCP_SERVER_VERSION,
   });
 
-  // Placeholder — populated in subsequent tasks. Referenced here so the
-  // registration entry points exist from Task 2 onward.
-  void context;
+  registerAllTools(server, context);
 
   return server;
 }
