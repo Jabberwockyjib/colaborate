@@ -13,6 +13,7 @@ import {
   type SessionStatus,
   serializeMentions,
 } from "@colaborate/core";
+import { FsSourcemapStore } from "./fs-sourcemap-store.js";
 import {
   handleCreateSession,
   handleGetSession,
@@ -20,6 +21,7 @@ import {
   handleSubmitSession,
   matchSessionRoute,
 } from "./routes-sessions.js";
+import { handleResolveSource, handleUploadSourcemap, matchSourcemapRoute } from "./routes-sourcemaps.js";
 import {
   feedbackCreateSchema,
   feedbackDeleteSchema,
@@ -28,8 +30,18 @@ import {
   getQuerySchema,
 } from "./validation.js";
 
-export type { ColaborateStore } from "@colaborate/core";
+export type {
+  ColaborateStore,
+  ResolveSourceInput,
+  ResolveSourceResult,
+  SourcemapPutInput,
+  SourcemapRecord,
+  SourcemapStore,
+} from "@colaborate/core";
 export { flattenAnnotation, StoreDuplicateError, StoreNotFoundError, serializeMentions } from "@colaborate/core";
+export { FsSourcemapStore } from "./fs-sourcemap-store.js";
+export { hashSourcemapContent } from "./sourcemap-hash.js";
+export { resolveSource } from "./sourcemap-resolver.js";
 export type {
   FeedbackCreateInput as FeedbackCreateSchemaInput,
   FeedbackDeleteInput,
@@ -264,6 +276,14 @@ export interface HandlerOptions {
   publicEndpoints?: Array<"GET" | "POST" | "PATCH" | "DELETE" | "OPTIONS">;
   /** Allowed CORS origins — when set, validates the Origin header */
   allowedOrigins?: string[] | undefined;
+  /**
+   * Optional `SourcemapStore` for the sourcemap upload + resolve routes. When
+   * omitted but `sourcemapStorePath` is set, an FsSourcemapStore is auto-instantiated.
+   * When both are unset, sourcemap routes return 500 on call.
+   */
+  sourcemapStore?: import("@colaborate/core").SourcemapStore | undefined;
+  /** Filesystem root for the default `FsSourcemapStore`. Ignored when `sourcemapStore` is set. */
+  sourcemapStorePath?: string | undefined;
 }
 
 /**
@@ -362,6 +382,8 @@ export function createColaborateHandler({
   apiKey,
   publicEndpoints = apiKey ? ["POST", "OPTIONS"] : undefined,
   allowedOrigins,
+  sourcemapStore: providedSourcemapStore,
+  sourcemapStorePath,
 }: HandlerOptions): ColaborateHandler {
   if (!providedStore && !prisma) {
     throw new Error("[colaborate] createColaborateHandler requires either `store` or `prisma`.");
@@ -369,6 +391,9 @@ export function createColaborateHandler({
 
   // Safe: the throw above guarantees at least one is defined
   const store: ColaborateStore = providedStore ?? new PrismaStore(prisma as NonNullable<typeof prisma>);
+
+  const sourcemapStore: import("@colaborate/core").SourcemapStore | null =
+    providedSourcemapStore ?? (sourcemapStorePath ? new FsSourcemapStore({ root: sourcemapStorePath }) : null);
 
   const publicMethods = publicEndpoints ? new Set(publicEndpoints) : null;
 
@@ -406,6 +431,25 @@ export function createColaborateHandler({
     POST: async (request: Request): Promise<Response> => {
       const corsHeaders = buildCorsHeaders(request, allowedOrigins);
       const pathname = new URL(request.url).pathname;
+
+      const sourcemapRoute = matchSourcemapRoute(pathname, "POST");
+      if (sourcemapRoute) {
+        const authError = authenticate(request, "POST", true);
+        if (authError) return withCors(authError, corsHeaders);
+        if (!sourcemapStore) {
+          return withCors(Response.json({ error: "Sourcemap store not configured" }, { status: 500 }), corsHeaders);
+        }
+        try {
+          if (sourcemapRoute.kind === "upload") {
+            return withCors(await handleUploadSourcemap(request, sourcemapStore), corsHeaders);
+          }
+          return withCors(await handleResolveSource(request, sourcemapStore), corsHeaders);
+        } catch (error) {
+          console.error("[colaborate] Sourcemap route error:", error);
+          return withCors(Response.json({ error: "Internal server error" }, { status: 500 }), corsHeaders);
+        }
+      }
+
       const sessionRoute = matchSessionRoute(pathname, "POST");
       if (sessionRoute) {
         const authError = authenticate(request, "POST", true);
@@ -458,6 +502,9 @@ export function createColaborateHandler({
           clientId: data.clientId,
           sessionId: data.sessionId,
           componentId: data.componentId,
+          sourceFile: data.sourceFile,
+          sourceLine: data.sourceLine,
+          sourceColumn: data.sourceColumn,
           mentions: serializeMentions(data.mentions),
           annotations: data.annotations.map(flattenAnnotation),
         });
