@@ -1,0 +1,68 @@
+{
+  "name": "@colaborate/mcp-server",
+  "version": "0.0.0",
+  "description": "MCP server exposing Colaborate feedback to LLMs like Claude Code",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./transports/stdio": {
+      "types": "./dist/transports/stdio.d.ts",
+      "import": "./dist/transports/stdio.js",
+      "require": "./dist/transports/stdio.cjs"
+    },
+    "./transports/http": {
+      "types": "./dist/transports/http.d.ts",
+      "import": "./dist/transports/http.js",
+      "require": "./dist/transports/http.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "colaborate-mcp": "./bin/stdio.mjs"
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "scripts": {
+    "build": "tsup && node ../../scripts/fix-dts.mjs dist",
+    "check": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "colaborate",
+    "mcp",
+    "model-context-protocol",
+    "feedback",
+    "claude-code"
+  ],
+  "author": "Develotype <bdoud@develotype.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/develotype/colaborate",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/develotype/colaborate.git",
+    "directory": "packages/mcp-server"
+  },
+  "bugs": {
+    "url": "https://github.com/develotype/colaborate/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@colaborate/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@colaborate/adapter-memory": "workspace:*"
+  }
+}
