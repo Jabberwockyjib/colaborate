@@ -73,7 +73,9 @@ export class ShapePicker {
       btn.type = "button";
       btn.dataset.shape = shape;
       if (shape === initial) btn.dataset.active = "true";
-      btn.setAttribute("aria-label", `${t(SHAPE_LABEL_KEYS[shape])} (${SHAPE_KEY[shape]})`);
+      const label = `${t(SHAPE_LABEL_KEYS[shape])} (${SHAPE_KEY[shape]})`;
+      btn.setAttribute("aria-label", label);
+      btn.setAttribute("title", label);
       btn.innerHTML = SHAPE_ICONS[shape];
       this.applyButtonStyle(btn, shape === initial);
       btn.addEventListener("click", () => this.handleClick(shape));

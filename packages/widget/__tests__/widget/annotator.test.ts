@@ -660,5 +660,62 @@ describe("Annotator", () => {
       const overlay = document.body.querySelector<HTMLElement>('div[aria-hidden="true"][tabindex="0"]');
       expect(overlay).toBeNull();
     });
+
+    // Regression: https://github.com/Jabberwockyjib/colaborate/issues/4
+    // R/C/A/L/T/F must not be swallowed when the user is typing in the popup
+    // textarea (or any other editable element).
+    describe("editable-target guard", () => {
+      it("keydown bubbling from a textarea does not switch shapes", () => {
+        bus.emit("annotation:start");
+        const textarea = document.createElement("textarea");
+        document.body.appendChild(textarea);
+
+        const event = new KeyboardEvent("keydown", { key: "c", bubbles: true, cancelable: true });
+        textarea.dispatchEvent(event);
+
+        const circleBtn = document.body.querySelector<HTMLButtonElement>('button[data-shape="circle"]');
+        expect(circleBtn?.dataset.active).not.toBe("true");
+        expect(event.defaultPrevented).toBe(false);
+      });
+
+      it("keydown bubbling from an input does not switch shapes", () => {
+        bus.emit("annotation:start");
+        const input = document.createElement("input");
+        input.type = "text";
+        document.body.appendChild(input);
+
+        const event = new KeyboardEvent("keydown", { key: "f", bubbles: true, cancelable: true });
+        input.dispatchEvent(event);
+
+        const freehandBtn = document.body.querySelector<HTMLButtonElement>('button[data-shape="freehand"]');
+        expect(freehandBtn?.dataset.active).not.toBe("true");
+        expect(event.defaultPrevented).toBe(false);
+      });
+
+      it("keydown bubbling from a contenteditable does not switch shapes", () => {
+        bus.emit("annotation:start");
+        const div = document.createElement("div");
+        div.contentEditable = "true";
+        document.body.appendChild(div);
+
+        const event = new KeyboardEvent("keydown", { key: "a", bubbles: true, cancelable: true });
+        div.dispatchEvent(event);
+
+        const arrowBtn = document.body.querySelector<HTMLButtonElement>('button[data-shape="arrow"]');
+        expect(arrowBtn?.dataset.active).not.toBe("true");
+        expect(event.defaultPrevented).toBe(false);
+      });
+
+      it("Escape from an editable still deactivates (Escape is not a shape shortcut)", () => {
+        bus.emit("annotation:start");
+        const textarea = document.createElement("textarea");
+        document.body.appendChild(textarea);
+
+        textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+
+        const overlay = document.body.querySelector<HTMLElement>('div[aria-hidden="true"][tabindex="0"]');
+        expect(overlay).toBeNull();
+      });
+    });
   });
 });

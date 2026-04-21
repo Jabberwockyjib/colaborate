@@ -12,6 +12,18 @@ import type { ThemeColors } from "./styles/theme.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
+/**
+ * True when the keydown target is an element that accepts text input.
+ * Guards shape shortcuts from eating characters in the popup textarea,
+ * contenteditable surfaces, or any future input the widget adds.
+ */
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  return target.isContentEditable;
+}
+
 export interface AnnotationComplete {
   annotation: AnnotationPayload;
   type: FeedbackType;
@@ -227,6 +239,7 @@ export class Annotator {
       return;
     }
     if (!this.isActive || this.isDrawing) return;
+    if (isEditableTarget(e.target)) return;
     const shape = getShapeFromKey(e.key);
     if (shape) {
       e.preventDefault();
