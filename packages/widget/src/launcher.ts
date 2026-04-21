@@ -292,6 +292,13 @@ export function launch(config: ColaborateConfig): ColaborateInstance {
         annotations: [annotation],
         clientId,
         ...(sessionId ? { sessionId, status } : {}),
+        ...(data.source
+          ? {
+              sourceFile: data.source.file,
+              sourceLine: data.source.line,
+              sourceColumn: data.source.column,
+            }
+          : {}),
       };
 
       try {

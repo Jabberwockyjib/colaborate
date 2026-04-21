@@ -1,5 +1,6 @@
 import type { AnnotationPayload, FeedbackType, Geometry, Shape } from "@colaborate/core";
 import { findAnchorElement, generateAnchor } from "./dom/anchor.js";
+import { readDebugSource } from "./dom/source.js";
 import { el, setText } from "./dom-utils.js";
 import { createDrawingMode, type DrawingMode } from "./drawing-modes.js";
 import type { EventBus, WidgetEvents } from "./events.js";
@@ -18,6 +19,8 @@ export interface AnnotationComplete {
   message: string;
   /** Whether session mode was active at the moment of submission. Launcher routes accordingly. */
   sessionMode: boolean;
+  /** Populated in dev builds via React fiber `_debugSource`; undefined otherwise. */
+  source?: { file: string; line: number; column: number };
 }
 
 /**
@@ -266,6 +269,7 @@ export class Annotator {
       viewportH: window.innerHeight,
       devicePixelRatio: window.devicePixelRatio,
     };
+    const source = readDebugSource(target) ?? undefined;
 
     this.deactivate();
 
@@ -274,6 +278,7 @@ export class Annotator {
       type: result.type,
       message: result.message,
       sessionMode: this.sessionMode,
+      ...(source ? { source } : {}),
     });
   };
 
@@ -371,6 +376,7 @@ export class Annotator {
       viewportH: window.innerHeight,
       devicePixelRatio: window.devicePixelRatio,
     };
+    const source = readDebugSource(anchorElement) ?? undefined;
 
     this.deactivate();
 
@@ -379,6 +385,7 @@ export class Annotator {
       type: result.type,
       message: result.message,
       sessionMode: this.sessionMode,
+      ...(source ? { source } : {}),
     });
   };
 
