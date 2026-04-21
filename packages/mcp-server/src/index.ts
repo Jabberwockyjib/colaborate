@@ -1,6 +1,7 @@
 /**
  * @colaborate/mcp-server — MCP server exposing Colaborate feedback to LLMs.
  *
- * Public entry point. Full tool/resource/prompt surface lands in later tasks.
+ * Public entry point.
  */
-export const PACKAGE_VERSION = "0.0.0";
+export { createColaborateMcpServer, MCP_SERVER_VERSION as PACKAGE_VERSION } from "./server.js";
+export type { ServerContext } from "./types.js";
