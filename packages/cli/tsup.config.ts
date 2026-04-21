@@ -9,5 +9,12 @@ export default defineConfig({
   dts: false,
   sourcemap: true,
   clean: true,
-  noExternal: ["@colaborate/core", "commander", "@clack/prompts", "@mrleebo/prisma-ast"],
+  noExternal: [
+    "@colaborate/core",
+    "@colaborate/adapter-prisma",
+    "commander",
+    "@clack/prompts",
+    "@mrleebo/prisma-ast",
+    "fast-glob",
+  ],
 });
