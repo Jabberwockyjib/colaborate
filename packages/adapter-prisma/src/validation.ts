@@ -107,6 +107,9 @@ export const feedbackCreateSchema = z.object({
   componentId: z.string().min(1).max(200).optional(),
   mentions: z.array(mentionSchema).max(100).default([]),
   status: z.enum(FEEDBACK_STATUSES).optional(),
+  sourceFile: z.string().min(1).max(2000).optional(),
+  sourceLine: z.number().int().min(1).optional(),
+  sourceColumn: z.number().int().min(0).optional(),
 });
 
 export const feedbackPatchSchema = z.object({
@@ -139,6 +142,27 @@ export const sessionCreateBodySchema = z.object({
 export const sessionListQuerySchema = z.object({
   projectName: z.string().min(1).max(200),
   status: z.enum(["drafting", "submitted", "triaged", "archived"] as const).optional(),
+});
+
+export const sourcemapUploadSchema = z.object({
+  projectName: z.string().min(1).max(200),
+  env: z.string().min(1).max(100),
+  /** Hex SHA-256 of the decompressed map body. */
+  hash: z.string().regex(/^[0-9a-f]{64}$/, "hash must be 64-char lowercase hex"),
+  filename: z.string().min(1).max(500),
+  /** Raw source-map JSON (decompressed). */
+  content: z
+    .string()
+    .min(2)
+    .max(50 * 1024 * 1024), // up to 50 MB decompressed
+});
+
+export const resolveSourceSchema = z.object({
+  projectName: z.string().min(1).max(200),
+  env: z.string().min(1).max(100),
+  hash: z.string().regex(/^[0-9a-f]{64}$/),
+  line: z.number().int().min(1),
+  column: z.number().int().min(0),
 });
 
 // ---------------------------------------------------------------------------
@@ -185,6 +209,9 @@ export interface FeedbackCreateInput {
   /** Set to [] by schema default when omitted from raw input. */
   mentions: import("@colaborate/core").Mention[];
   status?: FeedbackStatus | undefined;
+  sourceFile?: string | undefined;
+  sourceLine?: number | undefined;
+  sourceColumn?: number | undefined;
 }
 
 export interface FeedbackPatchInput {
@@ -228,6 +255,22 @@ export interface SessionListQueryInput {
   status?: import("@colaborate/core").SessionStatus | undefined;
 }
 
+export interface SourcemapUploadInput {
+  projectName: string;
+  env: string;
+  hash: string;
+  filename: string;
+  content: string;
+}
+
+export interface ResolveSourceBodyInput {
+  projectName: string;
+  env: string;
+  hash: string;
+  line: number;
+  column: number;
+}
+
 // ---------------------------------------------------------------------------
 // Type-level assertions: manual interfaces stay in sync with schemas.
 // If a field is added/removed/changed in the schema but not the interface
@@ -249,6 +292,13 @@ type _AssertSessionList = zod.z.infer<typeof sessionListQuerySchema> extends Ses
 type _AssertSessionListReverse =
   SessionListQueryInput extends zod.z.infer<typeof sessionListQuerySchema> ? true : never;
 
+type _AssertSourcemapUpload = zod.z.infer<typeof sourcemapUploadSchema> extends SourcemapUploadInput ? true : never;
+type _AssertSourcemapUploadReverse =
+  SourcemapUploadInput extends zod.z.infer<typeof sourcemapUploadSchema> ? true : never;
+type _AssertResolveSource = zod.z.infer<typeof resolveSourceSchema> extends ResolveSourceBodyInput ? true : never;
+type _AssertResolveSourceReverse =
+  ResolveSourceBodyInput extends zod.z.infer<typeof resolveSourceSchema> ? true : never;
+
 // Suppress unused-variable warnings — assertions are compile-time only
 void (0 as unknown as _AssertCreate);
 void (0 as unknown as _AssertCreateReverse);
@@ -262,6 +312,10 @@ void (0 as unknown as _AssertSessionCreate);
 void (0 as unknown as _AssertSessionCreateReverse);
 void (0 as unknown as _AssertSessionList);
 void (0 as unknown as _AssertSessionListReverse);
+void (0 as unknown as _AssertSourcemapUpload);
+void (0 as unknown as _AssertSourcemapUploadReverse);
+void (0 as unknown as _AssertResolveSource);
+void (0 as unknown as _AssertResolveSourceReverse);
 
 /**
  * Map Zod errors to a flat array of { field, message } objects.
