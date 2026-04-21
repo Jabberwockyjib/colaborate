@@ -113,6 +113,11 @@ describe("isStoreNotFound", () => {
     expect(isStoreNotFound("P2025")).toBe(false);
     expect(isStoreNotFound(42)).toBe(false);
   });
+
+  it("returns true for a plain object with code=STORE_NOT_FOUND (handles bundler module duplication)", () => {
+    expect(isStoreNotFound({ code: "STORE_NOT_FOUND" })).toBe(true);
+    expect(isStoreNotFound(Object.assign(new Error("Not found"), { code: "STORE_NOT_FOUND" }))).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -143,6 +148,11 @@ describe("isStoreDuplicate", () => {
   it("returns false for null/undefined", () => {
     expect(isStoreDuplicate(null)).toBe(false);
     expect(isStoreDuplicate(undefined)).toBe(false);
+  });
+
+  it("returns true for a plain object with code=STORE_DUPLICATE (handles bundler module duplication)", () => {
+    expect(isStoreDuplicate({ code: "STORE_DUPLICATE" })).toBe(true);
+    expect(isStoreDuplicate(Object.assign(new Error("Dup"), { code: "STORE_DUPLICATE" }))).toBe(true);
   });
 });
 

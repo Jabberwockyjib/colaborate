@@ -286,15 +286,23 @@ export class StoreDuplicateError extends Error {
 /** Type guard — works for `StoreNotFoundError` and ORM-specific equivalents (e.g. Prisma P2025). */
 export function isStoreNotFound(error: unknown): boolean {
   if (error instanceof StoreNotFoundError) return true;
+  if (typeof error !== "object" || error === null || !("code" in error)) return false;
+  const code = (error as { code: string }).code;
+  // Own code (handles module-duplication edge case in bundler/test environments)
+  if (code === "STORE_NOT_FOUND") return true;
   // Backwards compat: Prisma's P2025
-  return typeof error === "object" && error !== null && "code" in error && (error as { code: string }).code === "P2025";
+  return code === "P2025";
 }
 
 /** Type guard — works for `StoreDuplicateError` and ORM-specific equivalents (e.g. Prisma P2002). */
 export function isStoreDuplicate(error: unknown): boolean {
   if (error instanceof StoreDuplicateError) return true;
+  if (typeof error !== "object" || error === null || !("code" in error)) return false;
+  const code = (error as { code: string }).code;
+  // Own code (handles module-duplication edge case in bundler/test environments)
+  if (code === "STORE_DUPLICATE") return true;
   // Backwards compat: Prisma's P2002
-  return typeof error === "object" && error !== null && "code" in error && (error as { code: string }).code === "P2002";
+  return code === "P2002";
 }
 
 // ---------------------------------------------------------------------------
