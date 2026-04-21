@@ -11,13 +11,51 @@
 | **Phase 1c** — Widget shape UI (picker + 6 drawing modes + shortcuts) | ✅ | `f2f141e` | `v0.1.1-phase-1c` |
 | **Phase 2** — Widget session drafting UX + session HTTP routes | ✅ | `b13b8bc` | `v0.3.0-phase-2` |
 | **Phase 3** — MCP server (@colaborate/mcp-server package) | ✅ | `c1283b2` | `v0.4.0-phase-3` |
+| **Phase 4a** — Sourcemap uploader CLI + FsSourcemapStore + widget dev-mode `_debugSource` capture | ✅ | `d8974f0` | `v0.5.0-phase-4a` |
 
 **Current main branch state — all green:**
 
 - `bun run build` → 8/8 packages build (11/11 check tasks pass)
-- `bun run test:run` → **993 / 993 unit tests pass** (was 943 for Phase 2; +50 from mcp-server tool/resource/prompt/transport/integration tests + 2 core store-errors robustness tests)
-- `bun run test:e2e` → 109/109 Playwright pass, 2 skipped (touch — mobile-only; unchanged — Phase 3 has no browser surface)
-- `bun run lint` → biome clean (201 files)
+- `bun run test:run` → **1053 / 1053 unit tests pass** (was 993 for Phase 3; +60 from SourcemapStore conformance + resolver + FsSourcemapStore + upload/resolve schemas + HTTP handlers + createColaborateHandler wiring + source-field round-trip + CLI upload-sourcemaps + FeedbackPayload type extension + fiber walker + annotator/launcher integration)
+- `bun run test:e2e` → 109/109 Playwright pass, 2 skipped (unchanged — Phase 4a's widget change is dev-mode-only and test pages aren't React dev builds, so the new wire fields stay undefined)
+- `bun run lint` → biome clean across 220 files (1 pre-existing harmless warning in `adapter-prisma/__tests__/routes-sourcemaps.test.ts`: an unused `biome-ignore` suppression around a `Buffer`-as-`BodyInit` cast that Bun's types actually accept without it; cleanup deferred)
+
+## What Phase 4a shipped
+
+Sourcemap ingest + resolution backend + first widget source-capture.
+
+- **New `SourcemapStore` interface in `@colaborate/core`** — sibling of `ColaborateStore`, NOT an extension. `SourcemapPutInput`, `SourcemapRecord`, `ResolveSourceInput`, `ResolveSourceResult` plus 4 methods (`putSourcemap`, `getSourcemap`, `listSourcemaps`, `resolveSourceLocation`). Deliberately kept out of `ColaborateStore` so Memory / LocalStorage adapters don't need to stub unused methods.
+- **`FsSourcemapStore` in `@colaborate/adapter-prisma`** — filesystem-backed. Layout: `{root}/{projectName}/{env}/{hash}.map` + sibling `index.json` metadata. Idempotent on `{project, env, hash}` — re-upload refreshes filename + uploadedAt in place. 8 unit tests with `os.tmpdir()`.
+- **`resolveSource(mapContent, line, column)`** in `@colaborate/adapter-prisma` — pure primitive over `@jridgewell/trace-mapping`'s `TraceMap` + `originalPositionFor`. Fails closed: any parse error, any null source → null.
+- **`hashSourcemapContent(content)` helper** — SHA-256 hex digest of *decompressed* map body. Used as FS key + pre-upload dedup signal + upload integrity verify.
+- **Two new HTTP routes on `@colaborate/adapter-prisma`:**
+  - `POST /api/colaborate/sourcemaps` — ingest. Decompresses gzipped bodies (`node:zlib.gunzipSync`), verifies body `hash` matches SHA-256 of `content` before storing. 201 with the `SourcemapRecord` on success. Always API-key-authed when `apiKey` is set.
+  - `POST /api/colaborate/resolve-source` — resolve. Delegates to `store.resolveSourceLocation`. 200 `{sourceFile, sourceLine, sourceColumn}` on hit; 404 on miss. Same auth posture.
+- **`createColaborateHandler` options extended:** new `sourcemapStore` + `sourcemapStorePath`. The path auto-instantiates an `FsSourcemapStore`. Routes cascade: sourcemap → session → feedback with no pathname overlap.
+- **Feedback POST now threads `sourceFile / sourceLine / sourceColumn`** through the wire schema + `createFeedback` — the fields were already on `FeedbackCreateInput` from Phase 1b but previously always `undefined`.
+- **New CLI subcommand `colaborate upload-sourcemaps --project <name> --env <env> --dir <dir> --url <url>`** — fast-glob `**/*.map` under `dir`, gzip each body, POST to `/api/colaborate/sourcemaps` with Bearer auth (from `--api-key` or `COLABORATE_API_KEY`). Sequential uploads for deterministic error attribution.
+- **Widget `readDebugSource(element)`** in `packages/widget/src/dom/source.ts` — walks React's `__reactFiber$*` property, climbs the fiber `return` chain, returns `{file, line, column}` from the first populated `_debugSource` (or `null`). Works in React dev builds; silently `null` in prod or on non-React pages.
+- **Annotator + launcher integration** — both `annotation:complete` emit sites (mouse/touch + keyboard) call `readDebugSource` on the chosen anchor element and conditionally spread `source` into the event. Launcher spreads that into `FeedbackPayload.sourceFile/Line/Column`. Fails open: missing fiber metadata ⇒ fields omitted ⇒ server persists `null`.
+- **New wire fields on `FeedbackPayload`** — three optional fields mirroring the server-side `FeedbackCreateInput`. Backward compatible — existing widget POSTs without them continue to validate.
+- **Purely additive.** No changes to `packages/mcp-server` (Phase 3 surface frozen — screenshots land in Phase 4b). No changes to `@colaborate/adapter-memory` or `@colaborate/adapter-localstorage` (they don't need `SourcemapStore`). No Prisma tables added — source maps live on the filesystem.
+- **Testing:** +60 Vitest tests across 9 new test files. E2E unchanged (test pages aren't React dev builds, so `_debugSource` is always absent and the new optional wire fields stay undefined).
+- **Deferred to later phases:** widget calling the resolver endpoint in production (requires a babel plugin injecting source metadata, or event-handler stack-frame capture); screenshot ingest + `attach_screenshot` MCP tool (Phase 4b); `externalIssueUrl` write-through (Phase 6); OAuth 2.1 + PKCE (Phase 7).
+
+## Phase 4a commit trail
+
+```
+d8974f0  feat(widget): capture React _debugSource into feedback payload
+e4b6186  feat(widget): readDebugSource — fiber _debugSource walker
+80c640f  feat(core): FeedbackPayload.sourceFile / sourceLine / sourceColumn
+68b9ca6  feat(cli): colaborate upload-sourcemaps command
+3bef314  feat(adapter-prisma): wire sourcemap routes into createColaborateHandler
+cdaa76b  feat(adapter-prisma): HTTP handlers for sourcemap upload + resolve
+4fc6881  feat(adapter-prisma): Zod schemas for sourcemap routes + source fields
+7a6c9fa  feat(adapter-prisma): FsSourcemapStore — filesystem SourcemapStore
+feb9e64  feat(adapter-prisma): resolveSource helper over trace-mapping
+4d0db86  feat(adapter-prisma): hashSourcemapContent helper + trace-mapping dep
+59c0260  feat(core): add SourcemapStore interface + types
+```
 
 ## What Phase 3 shipped
 

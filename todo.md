@@ -1,18 +1,22 @@
 # TODO — Colaborate
 
 ## In Progress
-_(nothing in-flight — Phase 3 shipped cleanly)_
+_(nothing in-flight — Phase 4a shipped cleanly)_
 
 ## Next Up
 
-- [ ] **Phase 4** — Sourcemap uploader CLI + ingest endpoint + screenshot pipeline
+- [ ] **Phase 4b** — Screenshot ingest pipeline + `attach_screenshot` MCP tool + session resource populates real screenshots (previously bundled with 4a; split into its own plan at plan time)
 
-## Phase 4+ (written when Phase 4 lands)
+## Phase 5+ (written when Phase 4b lands)
 
 - [ ] **Phase 5** — Triage worker (Claude API) + GitHub adapter
 - [ ] **Phase 6** — Linear adapter + config switch
 - [ ] **Phase 7** — Deploy to sop-hub, wire into parkland, internal dogfood
 - [ ] **Phase 8** — README polish + public OSS release
+
+## Low-priority cleanups
+
+- [ ] Remove unnecessary `biome-ignore` + `as any` cast on the `gzipped Buffer` body in `packages/adapter-prisma/__tests__/routes-sourcemaps.test.ts:56-57` — Bun's `BodyInit` accepts `Buffer` directly, so neither the cast nor the suppression is needed. Surfaces as a single biome lint warning (non-blocking).
 
 ## Backlog — decisions deferred until needed
 
@@ -33,6 +37,8 @@ _(nothing in-flight — Phase 3 shipped cleanly)_
 - [x] **Phase 1b** — Schema extensions: `ColaborateSession` model, 9 new fields on `ColaborateFeedback` (`sessionId`, `componentId`, `sourceFile/Line/Column`, `mentions`, `externalProvider/IssueId/IssueUrl`), extended `FEEDBACK_STATUSES` (4 values), 4 new store methods (`createSession`, `getSession`, `listSessions`, `submitSession`), Zod wire-format extensions, `mentions.ts` module. Memory + LocalStorage + Prisma adapters all updated. 885 unit / 103 E2E green. Final commit `cb22e63`, tag `v0.2.0-phase-1b`.
 - [x] **Phase 2** — Widget session drafting UX + session HTTP routes. Reviewer toggles session mode, draws multiple annotations (each a draft feedback linked to a lazily-created session), opens the session panel, submits → all drafts flip to `open` atomically. 4 new HTTP routes in `@colaborate/adapter-prisma` (POST/GET sessions, POST /submit with `$transaction`). `SessionState` + `SessionPanel` + `SessionToggle` widget modules; FAB gains a 4th radial item. `StoreClient.sendFeedback` now forwards `sessionId`/`componentId`/`mentions` (Phase 1b prereq satisfied). 4 session HTTP methods on `WidgetClient` (ApiClient via HTTP, StoreClient direct). `SessionResponse` wire type + `FeedbackPayload.status` now optional. i18n 8 new keys en+fr. E2E: 3-draft submit flow × 3 browsers + non-session regression × 3 browsers. 943 unit / 109 E2E green. Final commit `b13b8bc`, tag `v0.3.0-phase-2`.
 - [x] **Phase 3** — MCP server exposing feedback to Claude Code. New `@colaborate/mcp-server` package. 6 tools (list_sessions, get_session, list_feedback, get_component_feedback, resolve_feedback, search_feedback), 2 resources (colaborate://session/{id}, colaborate://feedback/{id}), 1 prompt (/triage-session). Stdio transport (bin/stdio.mjs for local Claude Code) + Streamable HTTP transport with Bearer-token auth (Fetch-API handler — drops into Next.js App Router). Integration test round-trips through InMemoryTransport + SDK Client. Screenshots + externalIssueUrl write-through deferred to Phase 4/6 with documented limitations on the tools. Tagged `v0.4.0-phase-3`.
+- [x] **Phase 4a** — Sourcemap ingest + resolution backend + widget dev-mode source capture. New `SourcemapStore` sibling interface in `@colaborate/core` (4 methods). `FsSourcemapStore` FS-backed impl in `@colaborate/adapter-prisma`. `resolveSource` primitive over `@jridgewell/trace-mapping`. `hashSourcemapContent` SHA-256 helper. Two new HTTP routes: `POST /api/colaborate/sourcemaps` (gzip-decompressed + hash-verified ingest) + `POST /api/colaborate/resolve-source` (resolves bundled line:col → original file:line:col). Both API-key-authed, wired into `createColaborateHandler` with a new `sourcemapStorePath` option. New `colaborate upload-sourcemaps --project <name> --env <env> --dir <dir> --url <url>` CLI subcommand. Widget: new `readDebugSource(element)` walker reads React fiber `_debugSource` in dev mode; annotator emits it on `AnnotationComplete.source`; launcher spreads it into `FeedbackPayload.sourceFile/Line/Column`. `FeedbackPayload` gains 3 optional wire fields (backward compatible). Feedback POST handler threads the fields through to `store.createFeedback`. 1053 unit (+60) / 109 E2E green. Tagged `v0.5.0-phase-4a`.
+- [x] Plan 4a: `docs/superpowers/plans/2026-04-21-phase-4a-sourcemap-uploader.md`
 - [x] Spec: `docs/superpowers/specs/2026-04-18-colaborate-design.md`
 - [x] Phase 0 plan: `docs/superpowers/plans/2026-04-18-phase-0-fork-and-rebrand.md`
 - [x] Phase 1a plan: `docs/superpowers/plans/2026-04-18-phase-1a-geometry-union.md`
