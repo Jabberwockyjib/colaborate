@@ -393,6 +393,12 @@ export interface FeedbackPayload {
   mentions?: Mention[] | undefined;
   /** Optional — defaults to "open" server-side. Widget sets "draft" when session mode is active. */
   status?: FeedbackStatus | undefined;
+  /** Source file resolved by the widget's fiber `_debugSource` walk (dev mode). Server persists as-is. */
+  sourceFile?: string | undefined;
+  /** 1-indexed line within `sourceFile`. */
+  sourceLine?: number | undefined;
+  /** 0-indexed column within `sourceFile`. */
+  sourceColumn?: number | undefined;
   /** Client-generated UUID for deduplication */
   clientId: string;
 }
