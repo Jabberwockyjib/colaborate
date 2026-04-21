@@ -4,4 +4,5 @@
  * Public entry point.
  */
 export { createColaborateMcpServer, MCP_SERVER_VERSION as PACKAGE_VERSION } from "./server.js";
+export { connectStdio } from "./transports/stdio.js";
 export type { ServerContext } from "./types.js";
