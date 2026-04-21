@@ -55,6 +55,7 @@
       "name": "@colaborate/adapter-prisma",
       "version": "0.0.0",
       "dependencies": {
+        "@jridgewell/trace-mapping": "^0.3.25",
         "zod": "^3.24.0",
       },
       "devDependencies": {
