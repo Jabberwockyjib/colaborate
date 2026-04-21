@@ -10,13 +10,54 @@
 | **Phase 1b** — Schema extensions (session + 9 extended feedback fields + mentions) | ✅ | `cb22e63` | `v0.2.0-phase-1b` |
 | **Phase 1c** — Widget shape UI (picker + 6 drawing modes + shortcuts) | ✅ | `f2f141e` | `v0.1.1-phase-1c` |
 | **Phase 2** — Widget session drafting UX + session HTTP routes | ✅ | `b13b8bc` | `v0.3.0-phase-2` |
+| **Phase 3** — MCP server (@colaborate/mcp-server package) | ✅ | `c1283b2` | `v0.4.0-phase-3` |
 
 **Current main branch state — all green:**
 
-- `bun run build` → 7/7 packages build (10/10 check tasks pass)
-- `bun run test:run` → **943 / 943 unit tests pass** (was 885 for Phase 1b; +58 tests across session HTTP routes, submitSession store semantics, SessionState/SessionPanel/SessionToggle widget modules, and the widget StoreClient/ApiClient session methods)
-- `bun run test:e2e` → 109/109 Playwright pass, 2 skipped (touch — mobile-only); +6 new runs (3-draft submit × 3 browsers + non-session regression × 3 browsers)
-- `bun run lint` → biome clean (166 files)
+- `bun run build` → 8/8 packages build (11/11 check tasks pass)
+- `bun run test:run` → **993 / 993 unit tests pass** (was 943 for Phase 2; +50 from mcp-server tool/resource/prompt/transport/integration tests + 2 core store-errors robustness tests)
+- `bun run test:e2e` → 109/109 Playwright pass, 2 skipped (touch — mobile-only; unchanged — Phase 3 has no browser surface)
+- `bun run lint` → biome clean (201 files)
+
+## What Phase 3 shipped
+
+New `@colaborate/mcp-server` package — Colaborate's first LLM-facing surface.
+
+- **6 MCP tools** backed by `ColaborateStore`:
+  - `list_sessions({projectName, status?, limit?})`
+  - `get_session({id})` → `{ session, feedback[], screenshots: [] }` (screenshots land in Phase 4)
+  - `list_feedback({projectName, sessionId?, componentId?, status?, limit?})`
+  - `get_component_feedback({projectName, componentId?})` → grouped by componentId
+  - `resolve_feedback({id, externalIssueUrl?})` — flips to `resolved`; `externalIssueUrl` accepted but unpersisted (Phase 6)
+  - `search_feedback({projectName, query, sessionId?, componentId?, status?, limit?})`
+- **2 resources** (one-shot, no subscriptions in v0):
+  - `colaborate://session/{id}` — session bundle
+  - `colaborate://feedback/{id}` — single feedback with annotations
+- **1 prompt** `/triage-session {id}` — single user-role message instructing the LLM to draft tracker issues from a session bundle; references the session resource URI so the client can attach the bundle.
+- **Transports:**
+  - `connectStdio(server)` + `bin/stdio.mjs` entry point — Claude Code can launch with `{"command":"node","args":["bin/stdio.mjs"]}`
+  - `createHttpHandler({ server, apiKey? })` — Fetch-API handler wrapping `StreamableHTTPServerTransport` in stateless mode, with constant-time Bearer auth when `apiKey` is set. Drops into Next.js App Router / Bun / Hono / Cloudflare Workers.
+- **Purely additive.** No changes to `packages/core`, `packages/widget`, or any existing adapter. All behavior flows through the public `ColaborateStore` interface.
+- **Minor additive fix to `packages/core/src/types.ts`** (commit `7bce0ea`): `isStoreNotFound` / `isStoreDuplicate` now fall back to checking `err.code` in addition to `instanceof`, making them robust against bundler module-duplication (where two separate copies of the same class can exist). Backward compatible — existing code paths unchanged.
+- **Testing:** 50 new Vitest tests in `packages/mcp-server` + 2 new tests in `packages/core` (store-errors robustness). Each tool/resource/prompt has a unit test around its pure `handle` function; one integration test wires the real factory to `InMemoryTransport.createLinkedPair()` + an SDK `Client` and round-trips `list_sessions` + `colaborate://session/{id}` + `/triage-session` to prove the protocol wiring.
+- **Deferred to later phases:** `attach_screenshot` tool (Phase 4), actual screenshot/sourcemap content in bundles (Phase 4), `externalIssueUrl` write-through (Phase 6), OAuth 2.1 + PKCE (Phase 7), live resource subscriptions (post-v0).
+
+## Phase 3 commit trail
+
+```
+c1283b2  feat(mcp-server): HTTP transport helper with shared-API-key bearer auth
+2160bd1  feat(mcp-server): stdio transport + end-to-end integration test
+b182603  feat(mcp-server): /triage-session prompt
+4bfc388  feat(mcp-server): colaborate://session/{id} + colaborate://feedback/{id} resources
+a4e6bc1  feat(mcp-server): search_feedback tool (substring + AND filters)
+7bce0ea  feat(mcp-server): resolve_feedback tool flips status to resolved
+e987aa0  feat(mcp-server): get_component_feedback tool groups by componentId
+4209db4  feat(mcp-server): list_feedback tool
+739acf4  feat(mcp-server): get_session tool returns full session bundle
+74bad25  feat(mcp-server): list_sessions tool + shared seedStore fixture
+c88e6b4  feat(mcp-server): createColaborateMcpServer factory + ServerContext
+96e57be  chore(mcp-server): scaffold @colaborate/mcp-server package
+```
 
 ## What Phase 2 shipped
 
@@ -144,8 +185,9 @@ ab5f6c1  feat(widget): add shape keyboard shortcut mapping
 | **1b** | New schema fields: `ColaborateSession`, `sessionId`, `componentId`, `sourceFile/Line/Column`, `mentions[]` | ✅ `cb22e63` / `v0.2.0-phase-1b` |
 | **1c** | Widget UI: shape picker + 5 drawing modes + shortcuts + marker rendering for all shapes | ✅ `f2f141e` / `v0.1.1-phase-1c` |
 | **2** | Widget session drafting UX + 4 session HTTP routes + submit flow | ✅ `v0.3.0-phase-2` |
+| **3** | MCP server: 6 tools + 2 resources + 1 prompt + stdio + HTTP transports | ✅ `v0.4.0-phase-3` |
 
-Phases 1 and 2 are complete. Phase 3 (MCP server exposing feedback to Claude Code) is now the next milestone.
+Phases 1, 2, and 3 are complete. Phase 4 (sourcemap uploader CLI + ingest endpoint + screenshot pipeline) is now the next milestone.
 
 ## Outstanding items (unchanged from the prior handoff)
 
@@ -158,9 +200,9 @@ Phases 1 and 2 are complete. Phase 3 (MCP server exposing feedback to Claude Cod
 
 ```bash
 cd /Users/brian/dev/colaborate
-git log --oneline          # ~51 commits
-git tag --list             # v0.0.0-fork, v0.1.0-phase-1a, v0.1.1-phase-1c, v0.2.0-phase-1b, v0.3.0-phase-2
-bun run test:run           # 943 passing
+git log --oneline          # ~63 commits
+git tag --list             # v0.0.0-fork, v0.1.0-phase-1a, v0.1.1-phase-1c, v0.2.0-phase-1b, v0.3.0-phase-2, v0.4.0-phase-3
+bun run test:run           # 993 passing
 bun run test:e2e           # 109 passing, 2 skipped
 ```
 
@@ -171,7 +213,8 @@ Design docs:
 - `docs/superpowers/plans/2026-04-20-phase-1c-widget-shape-ui.md` — executed
 - `docs/superpowers/plans/2026-04-20-phase-1b-sessions-and-fields.md` — executed
 - `docs/superpowers/plans/2026-04-20-phase-2-widget-session-ux.md` — executed
+- `docs/superpowers/plans/2026-04-21-phase-3-mcp-server.md` — executed
 
 ---
 
-*Phase 1 complete (1a + 1b + 1c all ✅) and Phase 2 complete (session drafting UX + HTTP routes). Ready for Phase 3 — MCP server exposing feedback to Claude Code.*
+*Phase 1 complete (1a + 1b + 1c all ✅), Phase 2 complete (session drafting UX + HTTP routes), and Phase 3 complete (MCP server @colaborate/mcp-server). Ready for Phase 4 — sourcemap uploader CLI + ingest endpoint + screenshot pipeline.*
