@@ -5,6 +5,13 @@ export { EMPTY_MENTIONS, MENTION_KINDS, parseMentions, serializeMentions } from 
 export type { FieldDef, IndexDef, ModelDef } from "./schema.js";
 export { COLABORATE_MODELS } from "./schema.js";
 export type {
+  ResolveSourceInput,
+  ResolveSourceResult,
+  SourcemapPutInput,
+  SourcemapRecord,
+  SourcemapStore,
+} from "./sourcemap-store.js";
+export type {
   AnchorData,
   AnnotationCreateInput,
   AnnotationPayload,
