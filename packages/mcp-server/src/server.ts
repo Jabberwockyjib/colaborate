@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerAllPrompts } from "./prompts/index.js";
 import { registerAllResources } from "./resources/index.js";
 import { registerAllTools } from "./tools/index.js";
 import type { ServerContext } from "./types.js";
@@ -22,6 +23,7 @@ export function createColaborateMcpServer(context: ServerContext): McpServer {
 
   registerAllTools(server, context);
   registerAllResources(server, context);
+  registerAllPrompts(server);
 
   return server;
 }
