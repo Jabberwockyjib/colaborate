@@ -14,8 +14,14 @@ import {
   type SessionStatus,
   serializeMentions,
 } from "@colaborate/core";
-import type { FsScreenshotStore } from "./fs-screenshot-store.js";
+import { FsScreenshotStore } from "./fs-screenshot-store.js";
 import { FsSourcemapStore } from "./fs-sourcemap-store.js";
+import {
+  handleAttachScreenshot,
+  handleListScreenshots,
+  handleReadScreenshot,
+  matchScreenshotRoute,
+} from "./routes-screenshots.js";
 import {
   handleCreateSession,
   handleGetSession,
@@ -333,6 +339,15 @@ export interface HandlerOptions {
   sourcemapStore?: import("@colaborate/core").SourcemapStore | undefined;
   /** Filesystem root for the default `FsSourcemapStore`. Ignored when `sourcemapStore` is set. */
   sourcemapStorePath?: string | undefined;
+  /**
+   * Optional `FsScreenshotStore` for the screenshot attach + list + read routes.
+   * When omitted but `screenshotStorePath` is set, one is auto-instantiated.
+   * When both are unset AND `store` is not provided, an ad-hoc `PrismaStore` is
+   * constructed without screenshot support — attachScreenshot throws, listScreenshots returns [].
+   */
+  screenshotStore?: FsScreenshotStore | undefined;
+  /** Filesystem root for the default `FsScreenshotStore`. Ignored when `screenshotStore` is set. */
+  screenshotStorePath?: string | undefined;
 }
 
 /**
@@ -433,13 +448,19 @@ export function createColaborateHandler({
   allowedOrigins,
   sourcemapStore: providedSourcemapStore,
   sourcemapStorePath,
+  screenshotStore: providedScreenshotStore,
+  screenshotStorePath,
 }: HandlerOptions): ColaborateHandler {
   if (!providedStore && !prisma) {
     throw new Error("[colaborate] createColaborateHandler requires either `store` or `prisma`.");
   }
 
+  const screenshotStore: FsScreenshotStore | null =
+    providedScreenshotStore ?? (screenshotStorePath ? new FsScreenshotStore({ root: screenshotStorePath }) : null);
+
   // Safe: the throw above guarantees at least one is defined
-  const store: ColaborateStore = providedStore ?? new PrismaStore(prisma as NonNullable<typeof prisma>);
+  const store: ColaborateStore =
+    providedStore ?? new PrismaStore(prisma as NonNullable<typeof prisma>, screenshotStore ?? undefined);
 
   const sourcemapStore: import("@colaborate/core").SourcemapStore | null =
     providedSourcemapStore ?? (sourcemapStorePath ? new FsSourcemapStore({ root: sourcemapStorePath }) : null);
@@ -495,6 +516,18 @@ export function createColaborateHandler({
           return withCors(await handleResolveSource(request, sourcemapStore), corsHeaders);
         } catch (error) {
           console.error("[colaborate] Sourcemap route error:", error);
+          return withCors(Response.json({ error: "Internal server error" }, { status: 500 }), corsHeaders);
+        }
+      }
+
+      const screenshotRoute = matchScreenshotRoute(pathname, "POST");
+      if (screenshotRoute && screenshotRoute.kind === "attach") {
+        const authError = authenticate(request, "POST", true);
+        if (authError) return withCors(authError, corsHeaders);
+        try {
+          return withCors(await handleAttachScreenshot(request, store, screenshotRoute.feedbackId), corsHeaders);
+        } catch (error) {
+          console.error("[colaborate] Screenshot attach error:", error);
           return withCors(Response.json({ error: "Internal server error" }, { status: 500 }), corsHeaders);
         }
       }
@@ -591,6 +624,33 @@ export function createColaborateHandler({
           return withCors(Response.json({ error: "Method not allowed" }, { status: 405 }), corsHeaders);
         } catch (error) {
           console.error("[colaborate] Session route error:", error);
+          return withCors(Response.json({ error: "Internal server error" }, { status: 500 }), corsHeaders);
+        }
+      }
+
+      const screenshotRouteGet = matchScreenshotRoute(pathname, "GET");
+      if (screenshotRouteGet) {
+        const authError = authenticate(request, "GET", true);
+        if (authError) return withCors(authError, corsHeaders);
+        try {
+          if (screenshotRouteGet.kind === "list") {
+            return withCors(await handleListScreenshots(store, screenshotRouteGet.feedbackId), corsHeaders);
+          }
+          if (screenshotRouteGet.kind === "read") {
+            if (!screenshotStore) {
+              return withCors(
+                Response.json({ error: "Screenshot store not configured" }, { status: 500 }),
+                corsHeaders,
+              );
+            }
+            return withCors(
+              await handleReadScreenshot(screenshotStore, screenshotRouteGet.feedbackId, screenshotRouteGet.hash),
+              corsHeaders,
+            );
+          }
+          return withCors(Response.json({ error: "Method not allowed" }, { status: 405 }), corsHeaders);
+        } catch (error) {
+          console.error("[colaborate] Screenshot GET error:", error);
           return withCors(Response.json({ error: "Internal server error" }, { status: 500 }), corsHeaders);
         }
       }
