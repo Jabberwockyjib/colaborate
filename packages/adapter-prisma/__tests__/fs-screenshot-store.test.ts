@@ -51,6 +51,8 @@ describe("FsScreenshotStore", () => {
     await s.putScreenshot("fb-3", bytes2);
     const listed = await s.listScreenshots("fb-3");
     expect(listed).toHaveLength(2);
+    const [a, b] = listed;
+    expect(a?.id).not.toBe(b?.id);
   });
 
   it("readScreenshot returns the exact bytes", async () => {
@@ -82,5 +84,19 @@ describe("FsScreenshotStore", () => {
     // index.json is valid JSON
     const raw = await readFile(join(root, "fb-6", "index.json"), "utf8");
     expect(() => JSON.parse(raw)).not.toThrow();
+  });
+
+  it("putScreenshot rejects a feedbackId containing path traversal", async () => {
+    const s = store();
+    await expect(s.putScreenshot("../evil", bytes1)).rejects.toThrow("Invalid feedbackId");
+  });
+
+  it("throws (does not silently reset) when index.json is corrupted", async () => {
+    const { writeFile, mkdir } = await import("node:fs/promises");
+    const corruptDir = join(root, "fb-corrupt");
+    await mkdir(corruptDir, { recursive: true });
+    await writeFile(join(corruptDir, "index.json"), "{not json");
+    const s = store();
+    await expect(s.listScreenshots("fb-corrupt")).rejects.toThrow();
   });
 });

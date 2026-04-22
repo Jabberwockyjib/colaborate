@@ -35,6 +35,12 @@ export class FsScreenshotStore {
     if (existing) {
       existing.createdAt = now.toISOString();
       existing.byteSize = byteSize;
+      // Move to front so list order reflects most-recent-attach.
+      const idx = entries.indexOf(existing);
+      if (idx > 0) {
+        entries.splice(idx, 1);
+        entries.unshift(existing);
+      }
     } else {
       entries.unshift({ id, byteSize, createdAt: now.toISOString() });
     }
@@ -57,8 +63,8 @@ export class FsScreenshotStore {
   }
 
   private dirFor(feedbackId: string): string {
-    // Sanitize: feedbackId is a UUID-ish in practice, but guard against path traversal.
-    if (feedbackId.includes("/") || feedbackId.includes("..") || feedbackId.includes("\\")) {
+    // Positive allowlist: alphanumeric + `-` + `_`. UUIDs + mem-N-timestamp ids all match.
+    if (!/^[A-Za-z0-9_-]+$/.test(feedbackId)) {
       throw new Error(`Invalid feedbackId: ${feedbackId}`);
     }
     return join(this.root, feedbackId);
@@ -69,8 +75,9 @@ export class FsScreenshotStore {
       const raw = await readFile(join(this.dirFor(feedbackId), "index.json"), "utf8");
       const parsed = JSON.parse(raw) as FsIndexEntry[];
       return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw err;
     }
   }
 
