@@ -27,6 +27,14 @@ export interface ColaborateConfig {
   locale?: "fr" | "en" | (string & {}) | undefined;
   /** Called when the widget is skipped (production mode, mobile viewport) */
   onSkip?: (reason: "production" | "mobile") => void;
+  /**
+   * When `true`, the widget captures a viewport screenshot via html2canvas and attaches it
+   * to each submitted feedback. Adds ~50 KB to the widget bundle (html2canvas is
+   * lazy-imported on first use). Defaults to `false`.
+   */
+  captureScreenshots?: boolean;
+  /** Optional API key for widget-authenticated routes (screenshots). Sent as `Authorization: Bearer`. */
+  apiKey?: string;
 
   // Events
   /** Called when the feedback panel is opened. */
