@@ -165,6 +165,16 @@ export const resolveSourceSchema = z.object({
   column: z.number().int().min(0),
 });
 
+/** 10 MB decoded cap (≈ 13.4 MB base64) — generous for a viewport PNG; blocks pathological payloads. */
+const SCREENSHOT_MAX_BASE64_LEN = 14 * 1024 * 1024;
+
+export const screenshotAttachSchema = z.object({
+  dataUrl: z
+    .string()
+    .regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/, "dataUrl must be data:image/png;base64,<base64>")
+    .max(SCREENSHOT_MAX_BASE64_LEN, "dataUrl exceeds 10 MB decoded cap"),
+});
+
 // ---------------------------------------------------------------------------
 // Explicit public interfaces — decoupled from Zod to keep .d.ts clean
 // ---------------------------------------------------------------------------
@@ -271,6 +281,10 @@ export interface ResolveSourceBodyInput {
   column: number;
 }
 
+export interface ScreenshotAttachInput {
+  dataUrl: string;
+}
+
 // ---------------------------------------------------------------------------
 // Type-level assertions: manual interfaces stay in sync with schemas.
 // If a field is added/removed/changed in the schema but not the interface
@@ -298,6 +312,9 @@ type _AssertSourcemapUploadReverse =
 type _AssertResolveSource = zod.z.infer<typeof resolveSourceSchema> extends ResolveSourceBodyInput ? true : never;
 type _AssertResolveSourceReverse =
   ResolveSourceBodyInput extends zod.z.infer<typeof resolveSourceSchema> ? true : never;
+type _AssertScreenshotAttach = zod.z.infer<typeof screenshotAttachSchema> extends ScreenshotAttachInput ? true : never;
+type _AssertScreenshotAttachReverse =
+  ScreenshotAttachInput extends zod.z.infer<typeof screenshotAttachSchema> ? true : never;
 
 // Suppress unused-variable warnings — assertions are compile-time only
 void (0 as unknown as _AssertCreate);
@@ -316,6 +333,8 @@ void (0 as unknown as _AssertSourcemapUpload);
 void (0 as unknown as _AssertSourcemapUploadReverse);
 void (0 as unknown as _AssertResolveSource);
 void (0 as unknown as _AssertResolveSourceReverse);
+void (0 as unknown as _AssertScreenshotAttach);
+void (0 as unknown as _AssertScreenshotAttachReverse);
 
 /**
  * Map Zod errors to a flat array of { field, message } objects.
