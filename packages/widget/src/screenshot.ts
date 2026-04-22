@@ -22,7 +22,10 @@ export async function captureViewportScreenshot(ignoreSelectors: string[]): Prom
       },
     });
     return canvas.toDataURL("image/png");
-  } catch {
+  } catch (err) {
+    if (typeof console !== "undefined") {
+      console.warn("[colaborate] screenshot capture failed:", err);
+    }
     return null;
   }
 }
