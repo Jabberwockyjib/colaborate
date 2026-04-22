@@ -105,7 +105,7 @@ export function launch(config: ColaborateConfig): ColaborateInstance {
   // Client-side mode (store) vs HTTP mode (endpoint)
   const client: WidgetClient = config.store
     ? new StoreClient(config.store, config.projectName)
-    : new ApiClient(config.endpoint as string, config.projectName);
+    : new ApiClient(config.endpoint as string, config.projectName, config.apiKey);
 
   // Wire config callbacks to event bus
   if (config.onOpen) bus.on("open", config.onOpen);

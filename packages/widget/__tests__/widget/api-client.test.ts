@@ -255,6 +255,39 @@ describe("ApiClient", () => {
       expect(calledUrl).toContain("status=drafting");
     });
   });
+
+  // -----------------------------------------------------------------------
+  // attachScreenshot
+  // -----------------------------------------------------------------------
+
+  describe("ApiClient.attachScreenshot", () => {
+    beforeEach(() => vi.restoreAllMocks());
+
+    it("POSTs to /feedbacks/:id/screenshots with Bearer auth and returns the parsed body", async () => {
+      const mockResponse = { id: "abc", feedbackId: "fb-1", url: "/x", byteSize: 10, createdAt: "2026-04-21" };
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(JSON.stringify(mockResponse), { status: 201 }));
+      const client = new ApiClient("/api", "demo", "secret");
+      const result = await client.attachScreenshot("fb-1", "data:image/png;base64,AAA");
+      expect(result).toEqual(mockResponse);
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe("/api/feedbacks/fb-1/screenshots");
+      expect((init.headers as Record<string, string>).authorization).toBe("Bearer secret");
+    });
+
+    it("omits Authorization when no apiKey", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify({ id: "x", feedbackId: "fb", url: "/x", byteSize: 1, createdAt: "" }), {
+          status: 201,
+        }),
+      );
+      const client = new ApiClient("/api", "demo");
+      await client.attachScreenshot("fb-1", "data:image/png;base64,AAA");
+      const init = (vi.mocked(fetch).mock.calls[0] as [string, RequestInit])[1];
+      expect((init.headers as Record<string, string>).authorization).toBeUndefined();
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -31,6 +31,11 @@ export interface WidgetClient {
   submitSession(id: string): Promise<SessionResponse>;
   getSession(id: string): Promise<SessionResponse | null>;
   listSessions(projectName: string, status?: SessionStatus): Promise<SessionResponse[]>;
+  /** Attach a PNG screenshot (data URL) to an existing feedback. Resolves with the persisted metadata. */
+  attachScreenshot(
+    feedbackId: string,
+    dataUrl: string,
+  ): Promise<{ id: string; feedbackId: string; url: string; byteSize: number; createdAt: string }>;
 }
 
 const MAX_RETRIES = 3;
@@ -148,7 +153,12 @@ export class ApiClient {
   constructor(
     private readonly endpoint: string,
     private readonly projectName: string,
+    private readonly apiKey?: string,
   ) {}
+
+  private authHeaders(): Record<string, string> {
+    return this.apiKey ? { authorization: `Bearer ${this.apiKey}` } : {};
+  }
 
   async sendFeedback(payload: FeedbackPayload): Promise<FeedbackResponse> {
     try {
@@ -287,5 +297,30 @@ export class ApiClient {
       throw new Error(`Failed to list sessions: ${response.status}`);
     }
     return (await response.json()) as SessionResponse[];
+  }
+
+  async attachScreenshot(
+    feedbackId: string,
+    dataUrl: string,
+  ): Promise<{ id: string; feedbackId: string; url: string; byteSize: number; createdAt: string }> {
+    const url = `${this.endpoint}/feedbacks/${encodeURIComponent(feedbackId)}/screenshots`;
+    const response = await resilientFetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...this.authHeaders(),
+      },
+      body: JSON.stringify({ dataUrl }),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to attach screenshot: ${response.status}`);
+    }
+    return (await response.json()) as {
+      id: string;
+      feedbackId: string;
+      url: string;
+      byteSize: number;
+      createdAt: string;
+    };
   }
 }

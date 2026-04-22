@@ -105,6 +105,20 @@ export class StoreClient implements WidgetClient {
     const records = await this.store.listSessions(projectName, status);
     return records.map(toSessionResponse);
   }
+
+  async attachScreenshot(
+    feedbackId: string,
+    dataUrl: string,
+  ): Promise<{ id: string; feedbackId: string; url: string; byteSize: number; createdAt: string }> {
+    const record = await this.store.attachScreenshot(feedbackId, dataUrl);
+    return {
+      id: record.id,
+      feedbackId: record.feedbackId,
+      url: record.url,
+      byteSize: record.byteSize,
+      createdAt: record.createdAt.toISOString(),
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
