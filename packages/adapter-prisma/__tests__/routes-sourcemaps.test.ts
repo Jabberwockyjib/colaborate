@@ -53,8 +53,7 @@ describe("handleUploadSourcemap", () => {
       return new Request("http://t/api/colaborate/sourcemaps", {
         method: "POST",
         headers: { "content-type": "application/json", "content-encoding": "gzip" },
-        // biome-ignore lint/suspicious/noExplicitAny: Node's Request accepts Buffer, types lag
-        body: compressed as any,
+        body: compressed,
       });
     }
     return new Request("http://t/api/colaborate/sourcemaps", {
