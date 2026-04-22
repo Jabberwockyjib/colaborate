@@ -6,6 +6,7 @@ import {
   type FeedbackQuery,
   type FeedbackRecord,
   type FeedbackUpdateInput,
+  type ScreenshotRecord,
   type SessionCreateInput,
   type SessionRecord,
   type SessionStatus,
@@ -17,12 +18,51 @@ export { StoreDuplicateError, StoreNotFoundError } from "@colaborate/core";
 
 const DEFAULT_KEY = "colaborate_feedbacks";
 const DEFAULT_SESSIONS_KEY = "colaborate_sessions";
+const DEFAULT_SCREENSHOTS_KEY = "colaborate_screenshots";
 
 export interface LocalStorageStoreOptions {
   /** localStorage key prefix for feedbacks — defaults to `'colaborate_feedbacks'` */
   key?: string;
   /** localStorage key prefix for sessions — defaults to `'colaborate_sessions'` */
   sessionsKey?: string;
+  /** localStorage key prefix for screenshot metadata — defaults to `'colaborate_screenshots'` */
+  screenshotsKey?: string;
+}
+
+const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
+
+/**
+ * Decode a PNG data URL to raw bytes + hex SHA-256. Throws on malformed input.
+ *
+ * Note: this helper is duplicated between `@colaborate/adapter-memory` and this
+ * adapter. We intentionally do NOT promote it to `@colaborate/core` yet — only
+ * two callers, and Prisma uses a synchronous Node `Buffer.from(...)` path. Revisit
+ * if a third caller appears.
+ *
+ * TS typing: `Uint8Array<ArrayBuffer>` (not `Uint8Array`) satisfies TS 5.7+'s
+ * `BufferSource` parameter on `crypto.subtle.digest` — the strict-mode default of
+ * `Uint8Array<ArrayBufferLike>` is rejected because it could be backed by a
+ * `SharedArrayBuffer`. Narrowing fixes compilation without changing behavior.
+ */
+async function decodePngDataUrl(dataUrl: string): Promise<{ bytes: Uint8Array; hash: string }> {
+  if (!dataUrl.startsWith(PNG_DATA_URL_PREFIX)) {
+    throw new Error("Invalid dataUrl: expected 'data:image/png;base64,...'");
+  }
+  const base64 = dataUrl.slice(PNG_DATA_URL_PREFIX.length);
+  if (base64.length === 0) throw new Error("Invalid dataUrl: empty body");
+  let bytes: Uint8Array<ArrayBuffer>;
+  try {
+    const binary = atob(base64);
+    bytes = new Uint8Array(new ArrayBuffer(binary.length));
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  } catch {
+    throw new Error("Invalid dataUrl: base64 decode failed");
+  }
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const hash = Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return { bytes, hash };
 }
 
 /**
@@ -47,10 +87,12 @@ export interface LocalStorageStoreOptions {
 export class LocalStorageStore implements ColaborateStore {
   private readonly key: string;
   private readonly sessionsKey: string;
+  private readonly screenshotsKey: string;
 
   constructor(options?: LocalStorageStoreOptions) {
     this.key = options?.key ?? DEFAULT_KEY;
     this.sessionsKey = options?.sessionsKey ?? DEFAULT_SESSIONS_KEY;
+    this.screenshotsKey = options?.screenshotsKey ?? DEFAULT_SCREENSHOTS_KEY;
   }
 
   // ---------------------------------------------------------------------------
@@ -92,6 +134,32 @@ export class LocalStorageStore implements ColaborateStore {
       localStorage.setItem(this.sessionsKey, JSON.stringify(sessions));
     } catch {
       // localStorage full — silently drop (best-effort persistence)
+    }
+  }
+
+  private loadScreenshots(): Record<string, ScreenshotRecord[]> {
+    try {
+      const raw = localStorage.getItem(this.screenshotsKey);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw) as Record<
+        string,
+        Array<Omit<ScreenshotRecord, "createdAt"> & { createdAt: string }>
+      >;
+      const out: Record<string, ScreenshotRecord[]> = {};
+      for (const [k, v] of Object.entries(parsed)) {
+        out[k] = v.map((r) => ({ ...r, createdAt: new Date(r.createdAt) }));
+      }
+      return out;
+    } catch {
+      return {};
+    }
+  }
+
+  private saveScreenshots(map: Record<string, ScreenshotRecord[]>): void {
+    try {
+      localStorage.setItem(this.screenshotsKey, JSON.stringify(map));
+    } catch {
+      // localStorage full — silently drop
     }
   }
 
@@ -275,10 +343,41 @@ export class LocalStorageStore implements ColaborateStore {
     return session;
   }
 
+  async attachScreenshot(feedbackId: string, dataUrl: string): Promise<ScreenshotRecord> {
+    const { bytes, hash } = await decodePngDataUrl(dataUrl);
+    const map = this.loadScreenshots();
+    const list = map[feedbackId] ?? [];
+    const now = new Date();
+    const existing = list.find((r) => r.id === hash);
+    if (existing) {
+      existing.createdAt = now;
+      map[feedbackId] = list;
+      this.saveScreenshots(map);
+      return existing;
+    }
+    const record: ScreenshotRecord = {
+      id: hash,
+      feedbackId,
+      url: `/api/colaborate/feedbacks/${feedbackId}/screenshots/${hash}`,
+      byteSize: bytes.byteLength,
+      createdAt: now,
+    };
+    list.unshift(record);
+    map[feedbackId] = list;
+    this.saveScreenshots(map);
+    return record;
+  }
+
+  async listScreenshots(feedbackId: string): Promise<ScreenshotRecord[]> {
+    const map = this.loadScreenshots();
+    return map[feedbackId]?.slice() ?? [];
+  }
+
   /** Remove all data from localStorage for this store's keys. */
   clear(): void {
     localStorage.removeItem(this.key);
     localStorage.removeItem(this.sessionsKey);
+    localStorage.removeItem(this.screenshotsKey);
   }
 }
 
