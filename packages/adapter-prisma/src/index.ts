@@ -8,11 +8,13 @@ import {
   flattenAnnotation,
   isStoreDuplicate,
   isStoreNotFound,
+  type ScreenshotRecord,
   type SessionCreateInput,
   type SessionRecord,
   type SessionStatus,
   serializeMentions,
 } from "@colaborate/core";
+import type { FsScreenshotStore } from "./fs-screenshot-store.js";
 import { FsSourcemapStore } from "./fs-sourcemap-store.js";
 import {
   handleCreateSession,
@@ -34,12 +36,15 @@ export type {
   ColaborateStore,
   ResolveSourceInput,
   ResolveSourceResult,
+  ScreenshotRecord,
   SourcemapPutInput,
   SourcemapRecord,
   SourcemapStore,
 } from "@colaborate/core";
 export { flattenAnnotation, StoreDuplicateError, StoreNotFoundError, serializeMentions } from "@colaborate/core";
+export { FsScreenshotStore } from "./fs-screenshot-store.js";
 export { FsSourcemapStore } from "./fs-sourcemap-store.js";
+export { hashPngBytes } from "./screenshot-hash.js";
 export { hashSourcemapContent } from "./sourcemap-hash.js";
 export { resolveSource } from "./sourcemap-resolver.js";
 export type {
@@ -85,6 +90,32 @@ export interface ColaboratePrismaClient {
 
 const INCLUDE_ANNOTATIONS = { annotations: true };
 
+const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
+
+/**
+ * Decode a PNG data URL to a Node Buffer. Synchronous — uses Node's native
+ * base64 decoder. Throws on malformed input.
+ *
+ * Note: this is the sync Node-Buffer equivalent of the async `decodePngDataUrl`
+ * duplicated in `@colaborate/adapter-memory` and `@colaborate/adapter-localstorage`.
+ * Those use `atob` + `crypto.subtle.digest` to work in browser/Worker environments
+ * where Node's `Buffer` isn't available. We deliberately do NOT share a helper —
+ * the sync Node path here is simpler, ~30% faster, and avoids pulling Web Crypto
+ * into the server bundle.
+ */
+function decodePngDataUrl(dataUrl: string): Buffer {
+  if (!dataUrl.startsWith(PNG_DATA_URL_PREFIX)) {
+    throw new Error("Invalid dataUrl: expected 'data:image/png;base64,...'");
+  }
+  const base64 = dataUrl.slice(PNG_DATA_URL_PREFIX.length);
+  if (base64.length === 0) throw new Error("Invalid dataUrl: empty body");
+  try {
+    return Buffer.from(base64, "base64");
+  } catch {
+    throw new Error("Invalid dataUrl: base64 decode failed");
+  }
+}
+
 /**
  * Prisma-backed implementation of `ColaborateStore`.
  *
@@ -93,9 +124,12 @@ const INCLUDE_ANNOTATIONS = { annotations: true };
 export class PrismaStore implements ColaborateStore {
   /** @internal */
   private prisma: ColaboratePrismaClient;
+  /** @internal */
+  private screenshotStore: FsScreenshotStore | null;
 
-  constructor(prisma: ColaboratePrismaClient) {
+  constructor(prisma: ColaboratePrismaClient, screenshotStore?: FsScreenshotStore) {
     this.prisma = prisma;
+    this.screenshotStore = screenshotStore ?? null;
   }
 
   async createFeedback(data: FeedbackCreateInput): Promise<FeedbackRecord> {
@@ -245,6 +279,21 @@ export class PrismaStore implements ColaborateStore {
       }),
     ]);
     return updatedSession as SessionRecord;
+  }
+
+  async attachScreenshot(feedbackId: string, dataUrl: string): Promise<ScreenshotRecord> {
+    if (!this.screenshotStore) {
+      throw new Error(
+        "[colaborate] PrismaStore.attachScreenshot: no FsScreenshotStore configured. Pass `screenshotStore` to createColaborateHandler or the PrismaStore constructor.",
+      );
+    }
+    const bytes = decodePngDataUrl(dataUrl);
+    return this.screenshotStore.putScreenshot(feedbackId, bytes);
+  }
+
+  async listScreenshots(feedbackId: string): Promise<ScreenshotRecord[]> {
+    if (!this.screenshotStore) return [];
+    return this.screenshotStore.listScreenshots(feedbackId);
   }
 }
 
