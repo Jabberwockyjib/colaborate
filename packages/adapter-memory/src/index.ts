@@ -6,6 +6,7 @@ import {
   type FeedbackQuery,
   type FeedbackRecord,
   type FeedbackUpdateInput,
+  type ScreenshotRecord,
   type SessionCreateInput,
   type SessionRecord,
   type SessionStatus,
@@ -14,6 +15,31 @@ import {
 
 export type { ColaborateStore } from "@colaborate/core";
 export { StoreDuplicateError, StoreNotFoundError } from "@colaborate/core";
+
+const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
+
+/** Decode `data:image/png;base64,<...>` → `{bytes, hash}`. Throws on malformed input. */
+async function decodePngDataUrl(dataUrl: string): Promise<{ bytes: Uint8Array; hash: string }> {
+  if (!dataUrl.startsWith(PNG_DATA_URL_PREFIX)) {
+    throw new Error("Invalid dataUrl: expected 'data:image/png;base64,...'");
+  }
+  const base64 = dataUrl.slice(PNG_DATA_URL_PREFIX.length);
+  if (base64.length === 0) throw new Error("Invalid dataUrl: empty body");
+  let bytes: Uint8Array<ArrayBuffer>;
+  try {
+    // Works in Node 18+, Bun, browsers, Workers.
+    const binary = atob(base64);
+    bytes = new Uint8Array(new ArrayBuffer(binary.length));
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  } catch {
+    throw new Error("Invalid dataUrl: base64 decode failed");
+  }
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const hash = Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return { bytes, hash };
+}
 
 /**
  * In-memory `ColaborateStore` implementation.
@@ -37,6 +63,7 @@ export { StoreDuplicateError, StoreNotFoundError } from "@colaborate/core";
 export class MemoryStore implements ColaborateStore {
   private feedbacks: FeedbackRecord[] = [];
   private sessions: SessionRecord[] = [];
+  private screenshots: Map<string, ScreenshotRecord[]> = new Map();
   private idCounter = 1;
 
   private generateId(): string {
@@ -191,10 +218,36 @@ export class MemoryStore implements ColaborateStore {
     return session;
   }
 
+  async attachScreenshot(feedbackId: string, dataUrl: string): Promise<ScreenshotRecord> {
+    const { bytes, hash } = await decodePngDataUrl(dataUrl);
+    const list = this.screenshots.get(feedbackId) ?? [];
+    const now = new Date();
+    const existing = list.find((r) => r.id === hash);
+    if (existing) {
+      existing.createdAt = now;
+      return existing;
+    }
+    const record: ScreenshotRecord = {
+      id: hash,
+      feedbackId,
+      url: `/api/colaborate/feedbacks/${feedbackId}/screenshots/${hash}`,
+      byteSize: bytes.byteLength,
+      createdAt: now,
+    };
+    list.unshift(record);
+    this.screenshots.set(feedbackId, list);
+    return record;
+  }
+
+  async listScreenshots(feedbackId: string): Promise<ScreenshotRecord[]> {
+    return (this.screenshots.get(feedbackId) ?? []).slice();
+  }
+
   /** Remove all data from this store instance. */
   clear(): void {
     this.feedbacks = [];
     this.sessions = [];
+    this.screenshots = new Map();
     this.idCounter = 1;
   }
 }
