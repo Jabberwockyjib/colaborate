@@ -335,6 +335,25 @@ export function flattenAnnotation(ann: AnnotationPayload): AnnotationCreateInput
 // Abstract Store — adapter pattern
 // ---------------------------------------------------------------------------
 
+/** Persisted metadata for an attached screenshot. The PNG bytes live elsewhere (FS, localStorage, in-memory Map). */
+export interface ScreenshotRecord {
+  /** Stable id — hex SHA-256 of the decoded PNG bytes. Dedup key: same content ⇒ same id. */
+  id: string;
+  /** Feedback this screenshot is attached to. */
+  feedbackId: string;
+  /**
+   * Relative URL at which the PNG bytes can be fetched. For Prisma-backed deployments this is
+   * `/api/colaborate/feedbacks/{feedbackId}/screenshots/{id}`. Memory/LocalStorage stores that
+   * have no HTTP surface still set a URL of this shape so clients building session bundles can
+   * present a consistent shape; whether the URL actually resolves is environment-dependent.
+   */
+  url: string;
+  /** Byte size of the stored PNG (decoded from the dataUrl). */
+  byteSize: number;
+  /** When the record was first attached. Re-attaching identical content refreshes this value. */
+  createdAt: Date;
+}
+
 /**
  * Abstract storage interface for Colaborate.
  *
@@ -372,6 +391,16 @@ export interface ColaborateStore {
   listSessions(projectName: string, status?: SessionStatus): Promise<SessionRecord[]>;
   /** Flip status to `submitted` and stamp `submittedAt`. Throws `StoreNotFoundError` if `id` does not exist. */
   submitSession(id: string): Promise<SessionRecord>;
+  /**
+   * Attach a screenshot to a feedback. The `dataUrl` must be of the form
+   * `data:image/png;base64,<...>`. Implementations decode, hash, and persist.
+   * Idempotent on `{feedbackId, hash}` — re-attaching identical bytes returns the existing record
+   * with an updated `createdAt`. Does NOT validate that `feedbackId` refers to an existing
+   * feedback; the calling HTTP handler is responsible for that check.
+   */
+  attachScreenshot(feedbackId: string, dataUrl: string): Promise<ScreenshotRecord>;
+  /** List all screenshots attached to a feedback, newest first. Empty array (not error) when none. */
+  listScreenshots(feedbackId: string): Promise<ScreenshotRecord[]>;
 }
 
 /** Payload sent from the widget to the server when submitting feedback. */
