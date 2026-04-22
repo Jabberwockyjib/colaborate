@@ -564,5 +564,71 @@ export function testColaborateStore(factory: () => ColaborateStore): void {
         expect(fb.externalIssueUrl).toBe("https://github.com/x/y/issues/123");
       });
     });
+
+    // ------------------------------------------------------------------
+    // Screenshots
+    // ------------------------------------------------------------------
+
+    describe("screenshots", () => {
+      const DATA_URL =
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP8////fwAJ+wP9CNHoHgAAAABJRU5ErkJggg==";
+      // 70-byte 1x1 red PNG. Exact bytes vary by encoder, so we assert shape not a specific hash.
+
+      it("returns an empty list for a feedback with no screenshots", async () => {
+        freshStore();
+        const fb = await store.createFeedback(createInput());
+        const list = await store.listScreenshots(fb.id);
+        expect(list).toEqual([]);
+      });
+
+      it("attaches and lists a single screenshot", async () => {
+        freshStore();
+        const fb = await store.createFeedback(createInput());
+        const record = await store.attachScreenshot(fb.id, DATA_URL);
+
+        expect(record.feedbackId).toBe(fb.id);
+        expect(record.id).toMatch(/^[0-9a-f]{64}$/); // SHA-256 hex
+        expect(record.byteSize).toBeGreaterThan(0);
+        expect(record.createdAt).toBeInstanceOf(Date);
+        expect(record.url).toContain(fb.id);
+        expect(record.url).toContain(record.id);
+
+        const list = await store.listScreenshots(fb.id);
+        expect(list).toHaveLength(1);
+        expect(list[0]?.id).toBe(record.id);
+      });
+
+      it("is idempotent on duplicate dataUrl — same id, same byteSize", async () => {
+        freshStore();
+        const fb = await store.createFeedback(createInput());
+        const first = await store.attachScreenshot(fb.id, DATA_URL);
+        const second = await store.attachScreenshot(fb.id, DATA_URL);
+
+        expect(second.id).toBe(first.id);
+        expect(second.byteSize).toBe(first.byteSize);
+
+        const list = await store.listScreenshots(fb.id);
+        expect(list).toHaveLength(1); // No duplicate entry.
+      });
+
+      it("scopes screenshots by feedbackId — one feedback's screenshot does not leak to another", async () => {
+        freshStore();
+        const a = await store.createFeedback(createInput());
+        const b = await store.createFeedback(createInput());
+        await store.attachScreenshot(a.id, DATA_URL);
+
+        const listA = await store.listScreenshots(a.id);
+        const listB = await store.listScreenshots(b.id);
+        expect(listA).toHaveLength(1);
+        expect(listB).toHaveLength(0);
+      });
+
+      it("rejects a malformed dataUrl", async () => {
+        freshStore();
+        const fb = await store.createFeedback(createInput());
+        await expect(store.attachScreenshot(fb.id, "not a data url")).rejects.toThrow();
+        // Every impl must reject — exact message is implementation-defined.
+      });
+    });
   });
 }
