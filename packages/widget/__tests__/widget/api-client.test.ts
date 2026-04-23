@@ -254,6 +254,40 @@ describe("ApiClient", () => {
       expect(calledUrl).toContain("projectName=test-project");
       expect(calledUrl).toContain("status=drafting");
     });
+
+    it("createSession forwards Bearer auth when apiKey is configured", async () => {
+      const authedClient = new ApiClient(endpoint, projectName, "secret");
+      fetchMock.mockResolvedValue(new Response(JSON.stringify(sessionRecord), { status: 201 }));
+      await authedClient.createSession({ projectName });
+      const init = fetchMock.mock.calls[0]![1] as RequestInit;
+      expect((init.headers as Record<string, string>).authorization).toBe("Bearer secret");
+    });
+
+    it("submitSession forwards Bearer auth when apiKey is configured", async () => {
+      const authedClient = new ApiClient(endpoint, projectName, "secret");
+      fetchMock.mockResolvedValue(
+        new Response(JSON.stringify({ ...sessionRecord, status: "submitted" }), { status: 200 }),
+      );
+      await authedClient.submitSession("sess-1");
+      const init = fetchMock.mock.calls[0]![1] as RequestInit;
+      expect((init.headers as Record<string, string>).authorization).toBe("Bearer secret");
+    });
+
+    it("getSession forwards Bearer auth when apiKey is configured", async () => {
+      const authedClient = new ApiClient(endpoint, projectName, "secret");
+      fetchMock.mockResolvedValue(new Response(JSON.stringify(sessionRecord), { status: 200 }));
+      await authedClient.getSession("sess-1");
+      const init = fetchMock.mock.calls[0]![1] as RequestInit;
+      expect((init.headers as Record<string, string>).authorization).toBe("Bearer secret");
+    });
+
+    it("listSessions forwards Bearer auth when apiKey is configured", async () => {
+      const authedClient = new ApiClient(endpoint, projectName, "secret");
+      fetchMock.mockResolvedValue(new Response(JSON.stringify([sessionRecord]), { status: 200 }));
+      await authedClient.listSessions("test-project");
+      const init = fetchMock.mock.calls[0]![1] as RequestInit;
+      expect((init.headers as Record<string, string>).authorization).toBe("Bearer secret");
+    });
   });
 
   // -----------------------------------------------------------------------

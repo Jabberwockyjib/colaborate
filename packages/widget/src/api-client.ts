@@ -253,7 +253,7 @@ export class ApiClient {
   }): Promise<SessionResponse> {
     const response = await resilientFetch(`${this.endpoint}/sessions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...this.authHeaders() },
       body: JSON.stringify(input),
     });
     if (!response.ok) {
@@ -265,6 +265,7 @@ export class ApiClient {
   async submitSession(id: string): Promise<SessionResponse> {
     const response = await resilientFetch(`${this.endpoint}/sessions/${encodeURIComponent(id)}/submit`, {
       method: "POST",
+      headers: { ...this.authHeaders() },
     });
     if (!response.ok) {
       throw new Error(`Failed to submit session: ${response.status}`);
@@ -276,6 +277,7 @@ export class ApiClient {
     const response = await resilientFetch(`${this.endpoint}/sessions/${encodeURIComponent(id)}`, {
       method: "GET",
       cache: "no-store",
+      headers: { ...this.authHeaders() },
     });
     if (response.status === 404) return null;
     if (!response.ok) {
@@ -290,6 +292,7 @@ export class ApiClient {
     const response = await resilientFetch(`${this.endpoint}/sessions?${params.toString()}`, {
       method: "GET",
       cache: "no-store",
+      headers: { ...this.authHeaders() },
     });
     if (!response.ok) {
       throw new Error(`Failed to list sessions: ${response.status}`);
