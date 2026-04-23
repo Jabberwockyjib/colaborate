@@ -30,11 +30,12 @@ describe("createColaborateMcpServer — end-to-end via InMemoryTransport", () =>
     expect(info?.name).toBe("colaborate");
   });
 
-  it("lists all 6 tools", async () => {
+  it("lists all 7 tools", async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
       [
+        "attach_screenshot",
         "get_component_feedback",
         "get_session",
         "list_feedback",
