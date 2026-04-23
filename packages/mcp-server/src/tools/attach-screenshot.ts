@@ -2,11 +2,19 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ServerContext } from "../types.js";
 
+/**
+ * 14 MiB base64 ≈ 10 MiB decoded. Mirror of SCREENSHOT_MAX_BASE64_LEN in
+ * packages/adapter-prisma/src/validation.ts — keep the two surfaces in sync
+ * until a shared constant lands in @colaborate/core.
+ */
+const SCREENSHOT_MAX_BASE64_LEN = 14 * 1024 * 1024;
+
 export const inputSchema = z.object({
   feedbackId: z.string().min(1).describe("Feedback id to attach the screenshot to."),
   dataUrl: z
     .string()
     .regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/, "dataUrl must be data:image/png;base64,<base64>")
+    .max(SCREENSHOT_MAX_BASE64_LEN, "dataUrl exceeds 10 MB decoded cap")
     .describe("PNG screenshot as a data URL."),
 });
 

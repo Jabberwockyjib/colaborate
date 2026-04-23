@@ -1,6 +1,6 @@
 import { MemoryStore } from "@colaborate/adapter-memory";
 import { describe, expect, it } from "vitest";
-import { handle } from "../../src/tools/attach-screenshot.js";
+import { handle, inputSchema } from "../../src/tools/attach-screenshot.js";
 
 const PNG_DATA_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
@@ -34,5 +34,16 @@ describe("attach_screenshot tool", () => {
     const store = new MemoryStore();
     const result = await handle({ feedbackId: "any", dataUrl: "not a url" }, { store });
     expect(result.isError).toBe(true);
+  });
+
+  it("inputSchema rejects dataUrl exceeding the 14 MiB base64 cap", () => {
+    // 14 MiB + 1 byte of base64 after the prefix — deliberately oversized.
+    const oversized = `data:image/png;base64,${"A".repeat(14 * 1024 * 1024 + 1)}`;
+    const parsed = inputSchema.safeParse({ feedbackId: "any", dataUrl: oversized });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      const issue = parsed.error.issues.find((i) => i.path.join(".") === "dataUrl");
+      expect(issue?.message).toMatch(/10 MB|cap/i);
+    }
   });
 });
