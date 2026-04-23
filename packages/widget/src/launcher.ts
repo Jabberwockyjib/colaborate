@@ -13,6 +13,7 @@ import { createT, type TFunction } from "./i18n/index.js";
 import { getIdentity, type Identity, saveIdentity } from "./identity.js";
 import { MarkerManager } from "./markers.js";
 import { Panel } from "./panel.js";
+import { captureViewportScreenshot } from "./screenshot.js";
 import { SessionPanel } from "./session-panel.js";
 import { SessionState } from "./session-state.js";
 import { StoreClient } from "./store-client.js";
@@ -305,6 +306,27 @@ export function launch(config: ColaborateConfig): ColaborateInstance {
         const response = await client.sendFeedback(payload);
         bus.emit("feedback:sent", response);
         markers.addFeedback(response, markers.count + 1);
+
+        if (config.captureScreenshots) {
+          // Non-blocking, fail-open — a capture/upload error must NOT affect the
+          // user-facing success path.
+          void (async () => {
+            try {
+              const dataUrl = await captureViewportScreenshot([
+                "colaborate-widget",
+                ".colaborate-marker",
+                "#colaborate-overlay",
+              ]);
+              if (dataUrl) {
+                await client.attachScreenshot(response.id, dataUrl);
+                log("Screenshot attached", { feedbackId: response.id, byteSize: dataUrl.length });
+              }
+            } catch (err) {
+              log("Screenshot capture/attach failed (ignored)", err);
+            }
+          })();
+        }
+
         liveRegion.textContent = t("feedback.sent.confirmation");
         if (sessionMode) {
           await refreshSessionPanel();
