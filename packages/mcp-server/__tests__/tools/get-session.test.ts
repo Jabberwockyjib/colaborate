@@ -27,6 +27,21 @@ describe("get_session tool", () => {
     expect(bundle.screenshots).toEqual([]);
   });
 
+  it("populates screenshots from linked feedback records", async () => {
+    const linkedFeedback = await store.findByClientId(seed.feedbackClientIds.draftInDrafting);
+    expect(linkedFeedback).toBeDefined();
+    await store.attachScreenshot(
+      linkedFeedback!.id,
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+    );
+    const result = await handle({ id: seed.draftingSession.id }, { store });
+    const parsed = JSON.parse(result.content[0]!.text as string) as {
+      screenshots: Array<{ feedbackId: string }>;
+    };
+    expect(parsed.screenshots).toHaveLength(1);
+    expect(parsed.screenshots[0]?.feedbackId).toBe(linkedFeedback!.id);
+  });
+
   it("returns the submitted-session bundle with feedbacks flipped to open by submit", async () => {
     const result = await handle({ id: seed.submittedSession.id }, { store });
     const bundle = JSON.parse(result.content[0]!.text as string) as {
