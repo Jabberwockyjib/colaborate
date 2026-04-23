@@ -496,11 +496,7 @@ describe("launcher — annotation:complete integration", () => {
       });
 
       // Also verify we asked the screenshot module to ignore our own DOM nodes
-      expect(mockCaptureViewportScreenshot).toHaveBeenCalledWith([
-        "colaborate-widget",
-        ".colaborate-marker",
-        "#colaborate-overlay",
-      ]);
+      expect(mockCaptureViewportScreenshot).toHaveBeenCalledWith(["colaborate-widget", "#colaborate-markers"]);
 
       instance.destroy();
     });

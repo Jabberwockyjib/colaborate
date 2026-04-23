@@ -313,13 +313,15 @@ export function launch(config: ColaborateConfig): ColaborateInstance {
           void (async () => {
             try {
               const dataUrl = await captureViewportScreenshot([
+                // Colaborate-owned DOM to exclude from the screenshot. Tag name covers the
+                // custom-element host (shadow-DOM subtree). `#colaborate-markers` covers the
+                // markers container (outside shadow DOM, appended to document.body).
                 "colaborate-widget",
-                ".colaborate-marker",
-                "#colaborate-overlay",
+                "#colaborate-markers",
               ]);
               if (dataUrl) {
                 await client.attachScreenshot(response.id, dataUrl);
-                log("Screenshot attached", { feedbackId: response.id, byteSize: dataUrl.length });
+                log("Screenshot attached", { feedbackId: response.id, dataUrlChars: dataUrl.length });
               }
             } catch (err) {
               log("Screenshot capture/attach failed (ignored)", err);
