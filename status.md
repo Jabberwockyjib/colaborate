@@ -1,4 +1,4 @@
-# Colaborate — session status (2026-04-21)
+# Colaborate — session status (2026-04-22)
 
 ## What's landed
 
@@ -12,13 +12,71 @@
 | **Phase 2** — Widget session drafting UX + session HTTP routes | ✅ | `b13b8bc` | `v0.3.0-phase-2` |
 | **Phase 3** — MCP server (@colaborate/mcp-server package) | ✅ | `c1283b2` | `v0.4.0-phase-3` |
 | **Phase 4a** — Sourcemap uploader CLI + FsSourcemapStore + widget dev-mode `_debugSource` capture | ✅ | `d8974f0` | `v0.5.0-phase-4a` |
+| **Phase 4b** — Screenshot ingest pipeline + `attach_screenshot` MCP tool + MCP session bundles carry real screenshot metadata + widget opt-in html2canvas capture | ✅ | `4dba14c` | `v0.5.1-phase-4b` |
 
 **Current main branch state — all green:**
 
 - `bun run build` → 8/8 packages build (11/11 check tasks pass)
-- `bun run test:run` → **1053 / 1053 unit tests pass** (was 993 for Phase 3; +60 from SourcemapStore conformance + resolver + FsSourcemapStore + upload/resolve schemas + HTTP handlers + createColaborateHandler wiring + source-field round-trip + CLI upload-sourcemaps + FeedbackPayload type extension + fiber walker + annotator/launcher integration)
-- `bun run test:e2e` → 109/109 Playwright pass, 2 skipped (unchanged — Phase 4a's widget change is dev-mode-only and test pages aren't React dev builds, so the new wire fields stay undefined)
-- `bun run lint` → biome clean across 220 files (1 pre-existing harmless warning in `adapter-prisma/__tests__/routes-sourcemaps.test.ts`: an unused `biome-ignore` suppression around a `Buffer`-as-`BodyInit` cast that Bun's types actually accept without it; cleanup deferred)
+- `bun run test:run` → **1108 / 1108 unit tests pass** (was 1053 for Phase 4a; +55 from screenshot conformance × 2 adapters + FsScreenshotStore + screenshot-hash + routes-screenshots + handler-screenshots + ScreenshotResponse refactor + non-OK client test + screenshot module + api-client + launcher integration × 3 + MCP populate tests × 2 + attach_screenshot tool × 3 + smoke extension + session-route Bearer × 4)
+- `bun run test:e2e` → **109/109 Playwright pass, 2 skipped** — regression caught + fixed mid-phase (Task 10's html2canvas dynamic import triggered tsup's default ESM code-splitting, emitting a 120-byte `chunk-XXXX.js` that `dist/index.js` statically imported at the top; the E2E server only serves `/widget.js` so the chunk 404'd and the widget module failed to load. Fixed by `splitting: false` in `packages/widget/tsup.config.ts` — all code now inlined into `dist/index.js`, bundle grows 140 KB → 340 KB as the price of single-file distribution)
+- `bun run lint` → **biome clean across 231 files, zero warnings** (Task 0 removed the pre-existing harmless warning in `routes-sourcemaps.test.ts` — Phase 4b entered and exited warning-free)
+
+## What Phase 4b shipped
+
+Screenshot ingest + upload + MCP exposure, end-to-end. All API-key-authed when a key is configured; defaults remain anonymous-friendly.
+
+- **`ColaborateStore` extended with `attachScreenshot` + `listScreenshots`** — NOT a sibling interface (contrast Phase 4a's `SourcemapStore`). Screenshots are user-facing data tied to feedbacks, so all three adapters implement. `ScreenshotRecord` has `{id, feedbackId, url, byteSize, createdAt: Date}`; `id` is the 64-char hex SHA-256 of the decoded PNG bytes (content-addressed dedup + filename). A new `ScreenshotResponse` wire type (with `createdAt: string`) mirrors `SessionResponse` / `FeedbackResponse`.
+- **`FsScreenshotStore` in `@colaborate/adapter-prisma`** — mirrors `FsSourcemapStore` layout: `{root}/{feedbackId}/{hash}.png` + sibling `index.json`. `readIndex` distinguishes ENOENT (empty) from real FS/JSON errors (rethrow — no silent data loss). Re-put on existing hash refreshes `createdAt` AND moves entry to front of list. `dirFor` uses positive allowlist `/^[A-Za-z0-9_-]+$/` for path-traversal defense-in-depth. 9 unit tests.
+- **`hashPngBytes(bytes)` helper** — SHA-256 hex digest via `node:crypto.createHash`. 3 unit tests.
+- **Memory + LocalStorage adapters** implement the two new methods with `atob` + Web Crypto (`crypto.subtle.digest`). LocalStorage persists metadata only (no bytes — would exceed quota). Duplicated decode helper across both adapters is intentional (Prisma uses a synchronous Node `Buffer.from(base64)` path instead — three different stores, two distinct decoders).
+- **Three new HTTP routes on `@colaborate/adapter-prisma`:**
+  - `POST /api/colaborate/feedbacks/:id/screenshots` — attach. Zod-validated `{dataUrl}` (14 MiB base64 cap ≈ 10 MiB decoded).
+  - `GET /api/colaborate/feedbacks/:id/screenshots` — list metadata.
+  - `GET /api/colaborate/feedbacks/:id/screenshots/:hash` — serve PNG bytes with `content-type: image/png` + `cache-control: private, max-age=3600`.
+  - All three always require API key auth when `apiKey` is set (posture matches Phase 2 sessions + Phase 4a sourcemaps).
+- **`createColaborateHandler` options extended:** new `screenshotStore` + `screenshotStorePath` options. Path auto-instantiates `FsScreenshotStore`. `PrismaStore` constructor now takes an optional `screenshotStore` as 2nd arg; `attachScreenshot` throws actionable error when unconfigured, `listScreenshots` returns `[]`.
+- **Widget `captureViewportScreenshot(ignoreSelectors)`** in `packages/widget/src/screenshot.ts` — lazy `await import("html2canvas")`, filters Colaborate-owned DOM (`colaborate-widget` custom element + `#colaborate-markers` container — both DOM-verified against actual markup), returns `data:image/png;base64,…` or `null`. Fails open; `console.warn`s the error for debuggability.
+- **`ColaborateConfig.captureScreenshots?: boolean`** (default `false`) opts into the capture path. `ColaborateConfig.apiKey?: string` forwards as Bearer on the widget's screenshot routes (and, via a Phase 4b-surfaced fix, the Phase 2 session routes which were missing it).
+- **`WidgetClient.attachScreenshot(feedbackId, dataUrl)`** on both `ApiClient` (HTTP POST with Bearer when `apiKey` set) + `StoreClient` (direct store delegation, ISO-serializes `Date`).
+- **Launcher integration** — after `client.sendFeedback` resolves, a detached `void (async () => {…})()` block captures + uploads the screenshot when `config.captureScreenshots === true`. Runs fire-and-forget so capture/upload failures never delay the `feedback.sent.confirmation` toast. All errors routed through the existing `log` debug helper.
+- **MCP `get_session` tool + `colaborate://session/{id}` resource** now populate real `screenshots: ScreenshotRecord[]` by iterating linked feedbacks and calling `store.listScreenshots`. "Phase 4 limitation" caveat text removed from both descriptions. URLs only in the bundle — embedding base64 bytes would blow out LLM context on a multi-screenshot session.
+- **New MCP tool `attach_screenshot`** in `packages/mcp-server/src/tools/attach-screenshot.ts` — Zod input `{feedbackId, dataUrl}` with regex + 14 MiB size cap mirroring the HTTP surface. Try/catch returns `{isError: true}` on any store throw. Wired into `registerAllTools` as the 7th tool. Smoke test in `server.test.ts` now round-trips `attach_screenshot` → `colaborate://session/{id}` read and asserts the screenshot appears in the bundle.
+- **MCP server bumped from 0.4.0 → 0.5.0** in `packages/mcp-server/src/server.ts`'s `MCP_SERVER_VERSION` constant (workspace package.json stays at `0.0.0` per the repo's existing convention — the code constant is the handshake value).
+- **Widget tsup bundling fix** — `splitting: false` added to `packages/widget/tsup.config.ts` so the `noExternal` bundle guarantees a single `dist/index.js` output. Without this, Task 10's dynamic `import("html2canvas")` caused tsup's default ESM splitting to emit chunk files that the E2E server (and typical consumers) don't serve. Widget now bundles html2canvas unconditionally (~200 KB inlined) — the price of single-file distribution, consistent with Phase 1c's treatment of `perfect-freehand`.
+- **Testing:** +55 Vitest tests across 11 new/modified test files covering all 3 adapters' conformance, FS store round-trip + corruption + traversal, HTTP route handlers + handler integration, widget screenshot module + client method + launcher integration × 3, MCP tool + resource + attach tool + size cap + smoke. E2E remains 109 pass + 2 skip (no new E2E coverage — Phase 4b is opt-in behind `captureScreenshots`, which the test pages don't set).
+- **Known follow-ups** (chips spawned mid-phase):
+  - *Fix screenshot attach 500→400 for bad dataUrl* — introduce `StoreValidationError` in `@colaborate/core`, have adapters throw it from decode paths, remap to 400 in both the HTTP handler and the MCP tool. Requested by Task 7 + Task 14 reviewers.
+  - *Forward apiKey Bearer on session routes* — already landed mid-phase (`f831d44`). Pre-existing Phase 2 bug exposed when Task 11 added the `authHeaders()` pattern and the session methods were seen to lack it.
+- **Purely additive to the database.** No new Prisma tables. Screenshots live on the filesystem under `SCREENSHOT_STORE_PATH/{feedbackId}/{hash}.png`.
+- **Deferred to later phases:** per-screenshot MCP resources with embedded `blob` content (image/png) for LLM vision workflows; env-configurable size cap; `externalIssueUrl` write-through (Phase 6); OAuth 2.1 + PKCE (Phase 7).
+
+## Phase 4b commit trail
+
+```
+4dba14c  fix(widget): disable tsup code-splitting to keep single-file bundle
+9584107  chore(mcp-server): bump to 0.5.0 + smoke-test attach_screenshot
+f831d44  fix(widget): forward apiKey Bearer on session routes
+cfe35f8  fix(mcp-server): enforce screenshot size cap on attach_screenshot
+b33474c  feat(mcp-server): attach_screenshot tool
+c79c6d4  feat(mcp-server): get_session + session resource populate real screenshots
+00d86d5  fix(widget): correct screenshot ignoreElements selectors
+0fe7f9f  feat(widget): capture + attach screenshot after feedback submit
+3a806ab  refactor(core): extract ScreenshotResponse wire type
+10a4d4c  feat(widget): attachScreenshot on ApiClient + StoreClient
+de189d1  fix(widget): log capture failure via console.warn
+e708cb1  feat(widget): captureViewportScreenshot — html2canvas lazy wrapper
+d4b4c82  feat(core): ColaborateConfig.captureScreenshots + apiKey
+facbe0a  feat(adapter-prisma): wire screenshot routes into createColaborateHandler
+2bbef24  feat(adapter-prisma): HTTP handlers for screenshot attach/list/read
+182f398  feat(adapter-prisma): PrismaStore.attachScreenshot via FsScreenshotStore
+a15c89e  fix(adapter-prisma): FsScreenshotStore — match FsSourcemapStore robustness
+ef81a12  feat(adapter-prisma): FsScreenshotStore — filesystem PNG store
+0d3a5fc  feat(adapter-localstorage): attachScreenshot + listScreenshots
+d1a83b5  feat(adapter-memory): attachScreenshot + listScreenshots
+1dfe9db  test(core): extend conformance suite with screenshot round-trip
+f0c0d98  feat(core): add attachScreenshot / listScreenshots to ColaborateStore
+3bb4fe8  chore(adapter-prisma): drop unnecessary as-any cast on gzipped body
+```
 
 ## What Phase 4a shipped
 

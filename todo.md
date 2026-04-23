@@ -1,22 +1,25 @@
 # TODO — Colaborate
 
 ## In Progress
-_(nothing in-flight — Phase 4a shipped cleanly)_
+_(nothing in-flight — Phase 4b shipped cleanly, tag `v0.5.1-phase-4b`)_
 
 ## Next Up
 
-- [ ] **Phase 4b** — Screenshot ingest pipeline + `attach_screenshot` MCP tool + session resource populates real screenshots (previously bundled with 4a; split into its own plan at plan time)
+- [ ] **Phase 5** — Triage worker (Claude API) + GitHub adapter. On `session.submitted`, load the bundle via `ColaborateStore`, call Claude with prompt cache on the template, LLM outputs JSON array of issues, tracker adapter creates them.
 
-## Phase 5+ (written when Phase 4b lands)
+## Phase 6+
 
-- [ ] **Phase 5** — Triage worker (Claude API) + GitHub adapter
-- [ ] **Phase 6** — Linear adapter + config switch
+- [ ] **Phase 6** — Linear adapter + config switch (`COLABORATE_TRACKER=github|linear`)
 - [ ] **Phase 7** — Deploy to sop-hub, wire into parkland, internal dogfood
 - [ ] **Phase 8** — README polish + public OSS release
 
-## Low-priority cleanups
+## Phase 4b follow-ups (chips spawned during review)
 
-- [ ] Remove unnecessary `biome-ignore` + `as any` cast on the `gzipped Buffer` body in `packages/adapter-prisma/__tests__/routes-sourcemaps.test.ts:56-57` — Bun's `BodyInit` accepts `Buffer` directly, so neither the cast nor the suppression is needed. Surfaces as a single biome lint warning (non-blocking).
+- [ ] **Fix screenshot attach 500→400 for bad dataUrl** — introduce `StoreValidationError` in `@colaborate/core` (sibling to `StoreNotFoundError` / `StoreDuplicateError`), have Memory/LocalStorage/Prisma stores throw it from `decodePngDataUrl` paths, then in both `handleAttachScreenshot` (`packages/adapter-prisma/src/routes-screenshots.ts`) and the `attach_screenshot` MCP tool (`packages/mcp-server/src/tools/attach-screenshot.ts`), map `StoreValidationError` → 400 / `isError: true`, keep everything else → 500. Currently clients see 500 on inputs that pass the Zod regex but fail downstream base64 decode. Test gaps: 400-on-store-validation-throw, 500-on-unrelated-throw. Flagged by Task 7 + Task 14 reviewers.
+- [ ] **Per-screenshot MCP resources with `blob` + `mimeType: "image/png"`** — Phase 4b emits URL-only screenshots in session bundles to keep context windows sane. If LLM vision workflows need the pixels, expose each screenshot as its own MCP resource URI (e.g. `colaborate://screenshot/{id}`) with `blob: base64`. Spec says "JSON + base64 screenshots" so the path is sanctioned, just deferred.
+- [ ] **Env-configurable screenshot size cap** — currently hardcoded `14 * 1024 * 1024` bytes in both `screenshotAttachSchema` (HTTP) and `attach_screenshot`'s MCP tool input schema. Promote to a shared const in `@colaborate/core` and thread through `HandlerOptions.screenshotMaxBytes` + the MCP `ServerContext`.
+- [ ] **Optional polish:** extract `decodePngDataUrl` to `@colaborate/core/src/screenshot-codec.ts` if a third async caller ever appears (today it's duplicated across adapter-memory + adapter-localstorage; Prisma uses a sync Node `Buffer.from` variant).
+- [ ] **Optional polish:** `server.test.ts`'s "lists all N tools" assertion is too rigid — adding a new tool forces touching an unrelated test. Consider exporting `ALL_TOOL_NAMES` from `tools/index.ts` and asserting the sorted name list against that single source of truth.
 
 ## Backlog — decisions deferred until needed
 
@@ -29,7 +32,21 @@ _(nothing in-flight — Phase 4a shipped cleanly)_
 - [ ] **Freehand re-projection across element boundaries** — tagged `TODO(phase-1d-or-later)` in `packages/widget/src/annotator.ts`'s `rebaseGeometry` helper. When a freehand stroke spans two elements, the first-pass (1-px probe) anchor may differ from the second-pass (drawn-bounds) anchor; stored `points` are then relative to the first-pass anchor. Low severity; invisible for single-element strokes.
 - [ ] **Popup-open drag race in annotator** — while `popup.show(...)` is awaiting, the overlay retains `pointer-events: auto`. A click outside the popup card triggers a second `startDrawing`; the first `finishDrawing` continuation then emits the first drag and `deactivate()`s, silently discarding the second drag. Pre-existing from pre-Phase-1c. Fix: set `overlay.pointerEvents = "none"` before the popup await and restore on all exit paths.
 
-## Completed This Session (2026-04-18 → 2026-04-21)
+## Backlog — decisions deferred until needed
+
+- [ ] Create GitHub repo `develotype/colaborate` and push (needs user confirm on org/name)
+- [ ] Verify `@colaborate` npm scope availability before first publish
+- [ ] Rewrite `apps/demo` marketing copy around the MCP/Parkland angle (currently still SitePing-flavored pitch, just rebranded)
+- [ ] Pick Anthropic model + triage prompt template for Phase 5
+- [ ] GitHub App vs. PAT for the GitHub adapter
+- [ ] Upstream SitePing cherry-pick policy — currently no automation; cherry-pick bug fixes manually as needed
+- [ ] **Freehand re-projection across element boundaries** — tagged `TODO(phase-1d-or-later)` in `packages/widget/src/annotator.ts`'s `rebaseGeometry` helper. When a freehand stroke spans two elements, the first-pass (1-px probe) anchor may differ from the second-pass (drawn-bounds) anchor; stored `points` are then relative to the first-pass anchor. Low severity; invisible for single-element strokes.
+- [ ] **Popup-open drag race in annotator** — while `popup.show(...)` is awaiting, the overlay retains `pointer-events: auto`. A click outside the popup card triggers a second `startDrawing`; the first `finishDrawing` continuation then emits the first drag and `deactivate()`s, silently discarding the second drag. Pre-existing from pre-Phase-1c. Fix: set `overlay.pointerEvents = "none"` before the popup await and restore on all exit paths.
+
+## Completed This Session (2026-04-18 → 2026-04-23)
+
+- [x] **Phase 4b** — Screenshot ingest pipeline end-to-end. `ColaborateStore` extended with `attachScreenshot` + `listScreenshots`; all 3 adapters implement. `FsScreenshotStore` FS-backed impl in adapter-prisma (mirrors Phase 4a's `FsSourcemapStore`; `readIndex` ENOENT-vs-rethrow + move-to-front on re-put + positive-allowlist path guard). Three new HTTP routes (attach/list/read-bytes) wired into `createColaborateHandler`. Widget opt-in `captureScreenshots` flag + `captureViewportScreenshot` via html2canvas (bundled via tsup `noExternal` + `splitting: false`). Widget `attachScreenshot` on ApiClient (Bearer-authed) + StoreClient (direct). Launcher captures + uploads in a detached async block after `sendFeedback` resolves. MCP `get_session` + session resource populate real `screenshots[]`. New `attach_screenshot` MCP tool. Version bumped to 0.5.0. Mid-phase fixes: Task 11-surfaced session-route Bearer gap, Task 12-surfaced ignoreElements selectors fix, Task 10-surfaced tsup code-splitting regression. 1108 unit + 109 E2E green, zero lint warnings. Final commit `4dba14c`, tag `v0.5.1-phase-4b`. Plan: `docs/superpowers/plans/2026-04-21-phase-4b-screenshots.md`.
+
 
 - [x] **Phase 0** — Forked NeosiaNexus/SitePing @ `widget-v0.9.5` (SHA `1bfb1db`) into `/Users/brian/dev/colaborate`, fresh git, MIT + NOTICE attribution, full rebrand (`@siteping/* → @colaborate/*`, `SitePing → Colaborate` across types/element/CLI/paths/keys). Fixed Node 25's experimental webstorage shadowing jsdom. Commit `e656ff4`, tag `v0.0.0-fork`.
 - [x] **Phase 1a** — Replaced fixed `xPct/yPct/wPct/hPct` with `Geometry` discriminated union (6 shapes) across every layer: new `packages/core/src/geometry.ts` module, schema, Zod validation with `discriminatedUnion`, `flattenAnnotation`, all 3 adapters, widget annotator + markers, 14 new round-trip tests, all existing fixtures updated. Commit `ce24787`, tag `v0.1.0-phase-1a`.
