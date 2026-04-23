@@ -8,6 +8,7 @@ import {
   type FeedbackStatus,
   type FeedbackType,
   flattenAnnotation,
+  type ScreenshotResponse,
   type SessionRecord,
   type SessionResponse,
   type SessionStatus,
@@ -106,10 +107,7 @@ export class StoreClient implements WidgetClient {
     return records.map(toSessionResponse);
   }
 
-  async attachScreenshot(
-    feedbackId: string,
-    dataUrl: string,
-  ): Promise<{ id: string; feedbackId: string; url: string; byteSize: number; createdAt: string }> {
+  async attachScreenshot(feedbackId: string, dataUrl: string): Promise<ScreenshotResponse> {
     const record = await this.store.attachScreenshot(feedbackId, dataUrl);
     return {
       id: record.id,

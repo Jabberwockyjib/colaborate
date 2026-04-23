@@ -30,6 +30,7 @@ export type {
   FeedbackType,
   FeedbackUpdateInput,
   ScreenshotRecord,
+  ScreenshotResponse,
   SessionCreateInput,
   SessionRecord,
   SessionResponse,

@@ -287,6 +287,16 @@ describe("ApiClient", () => {
       const init = (vi.mocked(fetch).mock.calls[0] as [string, RequestInit])[1];
       expect((init.headers as Record<string, string>).authorization).toBeUndefined();
     });
+
+    it("throws when the server returns non-2xx", async () => {
+      // Use 401 (4xx) instead of 500 — resilientFetch retries 5xx with
+      // exponential backoff (1s + 2s + 4s), which exceeds vitest's 5s default timeout.
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("nope", { status: 401 }));
+      const client = new ApiClient("/api", "demo", "secret");
+      await expect(client.attachScreenshot("fb-1", "data:image/png;base64,AAA")).rejects.toThrow(
+        /Failed to attach screenshot: 401/,
+      );
+    });
   });
 });
 

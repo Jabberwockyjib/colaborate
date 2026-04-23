@@ -362,6 +362,15 @@ export interface ScreenshotRecord {
   createdAt: Date;
 }
 
+/** HTTP/JSON-serialized shape of a `ScreenshotRecord`. Dates are ISO strings on the wire. */
+export interface ScreenshotResponse {
+  id: string;
+  feedbackId: string;
+  url: string;
+  byteSize: number;
+  createdAt: string;
+}
+
 /**
  * Abstract storage interface for Colaborate.
  *

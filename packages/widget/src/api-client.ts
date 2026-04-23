@@ -3,6 +3,7 @@ import type {
   FeedbackResponse,
   FeedbackStatus,
   FeedbackType,
+  ScreenshotResponse,
   SessionResponse,
   SessionStatus,
 } from "@colaborate/core";
@@ -32,10 +33,7 @@ export interface WidgetClient {
   getSession(id: string): Promise<SessionResponse | null>;
   listSessions(projectName: string, status?: SessionStatus): Promise<SessionResponse[]>;
   /** Attach a PNG screenshot (data URL) to an existing feedback. Resolves with the persisted metadata. */
-  attachScreenshot(
-    feedbackId: string,
-    dataUrl: string,
-  ): Promise<{ id: string; feedbackId: string; url: string; byteSize: number; createdAt: string }>;
+  attachScreenshot(feedbackId: string, dataUrl: string): Promise<ScreenshotResponse>;
 }
 
 const MAX_RETRIES = 3;
@@ -299,10 +297,7 @@ export class ApiClient {
     return (await response.json()) as SessionResponse[];
   }
 
-  async attachScreenshot(
-    feedbackId: string,
-    dataUrl: string,
-  ): Promise<{ id: string; feedbackId: string; url: string; byteSize: number; createdAt: string }> {
+  async attachScreenshot(feedbackId: string, dataUrl: string): Promise<ScreenshotResponse> {
     const url = `${this.endpoint}/feedbacks/${encodeURIComponent(feedbackId)}/screenshots`;
     const response = await resilientFetch(url, {
       method: "POST",
@@ -315,12 +310,6 @@ export class ApiClient {
     if (!response.ok) {
       throw new Error(`Failed to attach screenshot: ${response.status}`);
     }
-    return (await response.json()) as {
-      id: string;
-      feedbackId: string;
-      url: string;
-      byteSize: number;
-      createdAt: string;
-    };
+    return (await response.json()) as ScreenshotResponse;
   }
 }
