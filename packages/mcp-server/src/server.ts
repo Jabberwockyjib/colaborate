@@ -5,7 +5,7 @@ import { registerAllTools } from "./tools/index.js";
 import type { ServerContext } from "./types.js";
 
 /** Constant so the same version string flows to both package.json and the MCP handshake. */
-export const MCP_SERVER_VERSION = "0.4.0";
+export const MCP_SERVER_VERSION = "0.5.0";
 
 /**
  * Build a fully-registered Colaborate MCP server.
