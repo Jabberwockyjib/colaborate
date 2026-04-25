@@ -1,3 +1,4 @@
+export { geometryHint } from "./bundle.js";
 export {
   InProcessEventBus,
   type TriageEventBus,
