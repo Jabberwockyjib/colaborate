@@ -316,6 +316,7 @@ export class LocalStorageStore implements ColaborateStore {
       submittedAt: null,
       triagedAt: null,
       notes: data.notes ?? null,
+      failureReason: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -388,6 +389,69 @@ export class LocalStorageStore implements ColaborateStore {
   async listScreenshots(feedbackId: string): Promise<ScreenshotRecord[]> {
     const map = this.loadScreenshots();
     return map[feedbackId]?.slice() ?? [];
+  }
+
+  async setFeedbackExternalIssue(
+    id: string,
+    data: { provider: string; issueId: string; issueUrl: string },
+  ): Promise<FeedbackRecord> {
+    const feedbacks = this.load();
+    const idx = feedbacks.findIndex((f) => f.id === id);
+    if (idx === -1) throw new StoreNotFoundError();
+    const updated: FeedbackRecord = {
+      ...(feedbacks[idx] as FeedbackRecord),
+      externalProvider: data.provider,
+      externalIssueId: data.issueId,
+      externalIssueUrl: data.issueUrl,
+      updatedAt: new Date(),
+    };
+    feedbacks[idx] = updated;
+    this.save(feedbacks);
+    return updated;
+  }
+
+  async markSessionTriaged(id: string): Promise<SessionRecord> {
+    const sessions = this.loadSessions();
+    const idx = sessions.findIndex((s) => s.id === id);
+    if (idx === -1) throw new StoreNotFoundError();
+    const session = sessions[idx] as SessionRecord;
+    if (session.status !== "submitted" && session.status !== "failed") {
+      throw new StoreValidationError(
+        `Cannot mark session as triaged from status '${session.status}' (expected 'submitted' or 'failed')`,
+      );
+    }
+    const now = new Date();
+    const updated: SessionRecord = {
+      ...session,
+      status: "triaged",
+      triagedAt: now,
+      failureReason: null,
+      updatedAt: now,
+    };
+    sessions[idx] = updated;
+    this.saveSessions(sessions);
+    return updated;
+  }
+
+  async markSessionFailed(id: string, reason: string): Promise<SessionRecord> {
+    const sessions = this.loadSessions();
+    const idx = sessions.findIndex((s) => s.id === id);
+    if (idx === -1) throw new StoreNotFoundError();
+    const session = sessions[idx] as SessionRecord;
+    if (session.status !== "submitted" && session.status !== "failed") {
+      throw new StoreValidationError(
+        `Cannot mark session as failed from status '${session.status}' (expected 'submitted' or 'failed')`,
+      );
+    }
+    const updated: SessionRecord = {
+      ...session,
+      status: "failed",
+      failureReason: reason,
+      updatedAt: new Date(),
+    };
+    sessions[idx] = updated;
+    this.saveSessions(sessions);
+    return updated;
   }
 
   /** Remove all data from localStorage for this store's keys. */
