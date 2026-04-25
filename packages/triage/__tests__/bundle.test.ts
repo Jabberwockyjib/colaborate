@@ -63,3 +63,148 @@ describe("geometryHint", () => {
     expect(geometryHint(json)).toBe("unknown geometry");
   });
 });
+
+import { MemoryStore } from "@colaborate/adapter-memory";
+import { type BundleFeedbackInput, loadSessionBundle, serializeBundle } from "../src/bundle.js";
+
+describe("loadSessionBundle", () => {
+  it("loads session + feedbacks + screenshots keyed by feedbackId", async () => {
+    const store = new MemoryStore();
+    const session = await store.createSession({ projectName: "p" });
+    const fbA = await store.createFeedback({
+      projectName: "p",
+      type: "bug",
+      message: "A",
+      status: "open",
+      url: "https://x",
+      viewport: "1280x720",
+      userAgent: "ua",
+      authorName: "Alice",
+      authorEmail: "a@x",
+      clientId: "c-a",
+      sessionId: session.id,
+      annotations: [],
+    });
+    const fbB = await store.createFeedback({
+      projectName: "p",
+      type: "bug",
+      message: "B",
+      status: "open",
+      url: "https://x",
+      viewport: "1280x720",
+      userAgent: "ua",
+      authorName: "Bob",
+      authorEmail: "b@x",
+      clientId: "c-b",
+      sessionId: session.id,
+      annotations: [],
+    });
+    // unrelated feedback (different session)
+    await store.createFeedback({
+      projectName: "p",
+      type: "bug",
+      message: "Z",
+      status: "open",
+      url: "https://x",
+      viewport: "1280x720",
+      userAgent: "ua",
+      authorName: "Other",
+      authorEmail: "o@x",
+      clientId: "c-z",
+      annotations: [],
+    });
+
+    // Tiny PNG (1x1 transparent — official PNG bytes, base64-encoded)
+    const PNG_1x1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+    await store.attachScreenshot(fbA.id, `data:image/png;base64,${PNG_1x1}`);
+
+    const bundle = await loadSessionBundle(store, session.id);
+    expect(bundle.session.id).toBe(session.id);
+    expect(bundle.feedbacks.map((f) => f.id).sort()).toEqual([fbA.id, fbB.id].sort());
+    expect(bundle.screenshotsByFeedbackId[fbA.id]).toHaveLength(1);
+    expect(bundle.screenshotsByFeedbackId[fbB.id]).toEqual([]);
+    // Unrelated feedback NOT in bundle
+    expect(bundle.feedbacks.find((f) => f.clientId === "c-z")).toBeUndefined();
+  });
+
+  it("throws when session does not exist", async () => {
+    const store = new MemoryStore();
+    await expect(loadSessionBundle(store, "nope")).rejects.toThrow(/session not found/i);
+  });
+});
+
+describe("serializeBundle", () => {
+  it("emits a JSON string with stable shape", () => {
+    const session = {
+      id: "s1",
+      projectName: "p",
+      reviewerName: "Alice",
+      reviewerEmail: null,
+      status: "submitted" as const,
+      submittedAt: new Date("2026-04-25T10:00:00Z"),
+      triagedAt: null,
+      notes: null,
+      failureReason: null,
+      createdAt: new Date("2026-04-25T09:00:00Z"),
+      updatedAt: new Date("2026-04-25T10:00:00Z"),
+    };
+    const feedbacks: BundleFeedbackInput[] = [
+      {
+        id: "fb-1",
+        message: "header is too low contrast",
+        authorName: "Alice",
+        componentId: "Header",
+        sourceFile: "components/Header.tsx",
+        sourceLine: 12,
+        url: "https://app/",
+        viewport: "1280x720",
+        annotations: [
+          { shape: "rectangle", geometry: JSON.stringify({ shape: "rectangle", x: 0, y: 0, w: 0.5, h: 0.1 }) },
+        ],
+        screenshots: ["/api/colaborate/feedbacks/fb-1/screenshots/abc"],
+      },
+    ];
+    const text = serializeBundle({ session, feedbacks });
+    const parsed = JSON.parse(text);
+    expect(parsed.session.id).toBe("s1");
+    expect(parsed.feedbacks).toHaveLength(1);
+    expect(parsed.feedbacks[0].id).toBe("fb-1");
+    expect(parsed.feedbacks[0].geometryHint).toMatch(/rectangle/);
+    expect(parsed.feedbacks[0].screenshots).toEqual(["/api/colaborate/feedbacks/fb-1/screenshots/abc"]);
+  });
+
+  it("omits null/undefined feedback fields cleanly", () => {
+    const session = {
+      id: "s1",
+      projectName: "p",
+      reviewerName: null,
+      reviewerEmail: null,
+      status: "submitted" as const,
+      submittedAt: new Date(),
+      triagedAt: null,
+      notes: null,
+      failureReason: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const feedbacks: BundleFeedbackInput[] = [
+      {
+        id: "fb-1",
+        message: "x",
+        authorName: "A",
+        componentId: null,
+        sourceFile: null,
+        sourceLine: null,
+        url: "https://app/",
+        viewport: "1280x720",
+        annotations: [],
+        screenshots: [],
+      },
+    ];
+    const text = serializeBundle({ session, feedbacks });
+    const parsed = JSON.parse(text);
+    expect(parsed.feedbacks[0]).not.toHaveProperty("componentId");
+    expect(parsed.feedbacks[0]).not.toHaveProperty("sourceFile");
+    expect(parsed.feedbacks[0]).not.toHaveProperty("geometryHint");
+  });
+});

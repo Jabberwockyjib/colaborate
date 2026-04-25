@@ -1,4 +1,10 @@
-export { geometryHint } from "./bundle.js";
+export {
+  type BundleFeedbackInput,
+  geometryHint,
+  loadSessionBundle,
+  projectFeedback,
+  serializeBundle,
+} from "./bundle.js";
 export {
   InProcessEventBus,
   type TriageEventBus,
