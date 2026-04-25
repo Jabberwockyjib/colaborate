@@ -60,7 +60,7 @@
   "dependencies": {
     "@colaborate/core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "zod": "^3.24.0"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@colaborate/adapter-memory": "workspace:*"

@@ -10,14 +10,14 @@
     "clean": "rm -rf .next"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.40.0",
+    "@anthropic-ai/sdk": "^0.91.1",
     "@colaborate/adapter-memory": "workspace:*",
     "@colaborate/adapter-prisma": "workspace:*",
     "@colaborate/integration-github": "workspace:*",
     "@colaborate/triage": "workspace:*",
     "@colaborate/widget": "workspace:*",
     "gsap": "^3.14.2",
-    "next": "^15.3.0",
+    "next": "^16.2.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
