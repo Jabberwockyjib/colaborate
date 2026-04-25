@@ -499,6 +499,34 @@ export interface ColaborateStore {
   attachScreenshot(feedbackId: string, dataUrl: string): Promise<ScreenshotRecord>;
   /** List all screenshots attached to a feedback, newest first. Empty array (not error) when none. */
   listScreenshots(feedbackId: string): Promise<ScreenshotRecord[]>;
+  /**
+   * Persist tracker integration metadata onto a feedback record.
+   * Called by the triage worker (`@colaborate/triage`) after creating an issue
+   * via a `TrackerAdapter`.
+   *
+   * Throws `StoreNotFoundError` if `id` does not exist.
+   */
+  setFeedbackExternalIssue(
+    id: string,
+    data: { provider: string; issueId: string; issueUrl: string },
+  ): Promise<FeedbackRecord>;
+  /**
+   * Transition a session from `submitted` or `failed` to `triaged`. Stamps
+   * `triagedAt` to `now`. Clears `failureReason` to `null`.
+   *
+   * Throws `StoreNotFoundError` if `id` does not exist.
+   * Throws `StoreValidationError` if current status ∉ {`submitted`, `failed`}.
+   */
+  markSessionTriaged(id: string): Promise<SessionRecord>;
+  /**
+   * Transition a session from `submitted` or `failed` to `failed`. Persists
+   * `reason` into `failureReason`. (`failed → failed` is permitted so retry-then-
+   * fail-again works.)
+   *
+   * Throws `StoreNotFoundError` if `id` does not exist.
+   * Throws `StoreValidationError` if current status ∉ {`submitted`, `failed`}.
+   */
+  markSessionFailed(id: string, reason: string): Promise<SessionRecord>;
 }
 
 /** Payload sent from the widget to the server when submitting feedback. */
