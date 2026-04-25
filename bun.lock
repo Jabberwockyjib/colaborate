@@ -21,8 +21,11 @@
       "name": "@colaborate/demo",
       "version": "0.0.0",
       "dependencies": {
+        "@anthropic-ai/sdk": "^0.40.0",
         "@colaborate/adapter-memory": "workspace:*",
         "@colaborate/adapter-prisma": "workspace:*",
+        "@colaborate/integration-github": "workspace:*",
+        "@colaborate/triage": "workspace:*",
         "@colaborate/widget": "workspace:*",
         "gsap": "^3.14.2",
         "next": "^15.3.0",
