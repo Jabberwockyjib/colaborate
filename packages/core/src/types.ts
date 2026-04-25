@@ -95,8 +95,8 @@ export type FeedbackStatus = (typeof FEEDBACK_STATUSES)[number];
 // Session
 // ---------------------------------------------------------------------------
 
-/** Review session lifecycle. `drafting` is the widget's local session; `submitted` is posted to the server; `triaged` means the triage worker has processed it; `archived` is a soft delete. */
-export const SESSION_STATUSES = ["drafting", "submitted", "triaged", "archived"] as const;
+/** Review session lifecycle. `drafting` is the widget's local session; `submitted` is posted to the server; `triaged` means the triage worker has processed it; `failed` means the triage worker errored and the session needs manual retry; `archived` is a soft delete. */
+export const SESSION_STATUSES = ["drafting", "submitted", "triaged", "failed", "archived"] as const;
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
 
 /** Input for creating a session — status defaults to `drafting`. */
@@ -117,6 +117,8 @@ export interface SessionRecord {
   submittedAt: Date | null;
   triagedAt: Date | null;
   notes: string | null;
+  /** Populated by the triage worker on `markSessionFailed`. Cleared on `markSessionTriaged`. */
+  failureReason: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -131,6 +133,7 @@ export interface SessionResponse {
   submittedAt: string | null;
   triagedAt: string | null;
   notes: string | null;
+  failureReason: string | null;
   createdAt: string;
   updatedAt: string;
 }

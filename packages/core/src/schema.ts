@@ -133,6 +133,7 @@ const _COLABORATE_MODELS = {
       submittedAt: { type: "DateTime", optional: true },
       triagedAt: { type: "DateTime", optional: true },
       notes: { type: "String", optional: true, nativeType: "Text" },
+      failureReason: { type: "String", optional: true, nativeType: "Text" },
       createdAt: { type: "DateTime", default: "now()" },
       updatedAt: { type: "DateTime", isUpdatedAt: true },
       feedbacks: {
