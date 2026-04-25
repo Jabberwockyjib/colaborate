@@ -57,7 +57,7 @@
   },
   "devDependencies": {
     "@colaborate/core": "workspace:*",
-    "@medv/finder": "^3.2.0",
+    "@medv/finder": "^4.0.2",
     "html2canvas": "^1.4.1",
     "perfect-freehand": "^1.2.2"
   }

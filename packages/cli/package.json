@@ -45,9 +45,9 @@
   "devDependencies": {
     "@colaborate/core": "workspace:*",
     "@colaborate/adapter-prisma": "workspace:*",
-    "commander": "^13.0.0",
-    "@clack/prompts": "^0.9.0",
-    "@mrleebo/prisma-ast": "^0.12.0",
+    "commander": "^14.0.3",
+    "@clack/prompts": "^1.2.0",
+    "@mrleebo/prisma-ast": "^0.15.0",
     "fast-glob": "^3.3.2"
   }
 }
