@@ -1,4 +1,4 @@
-# Colaborate — session status (2026-04-22)
+# Colaborate — session status (2026-04-25)
 
 ## What's landed
 
@@ -13,13 +13,34 @@
 | **Phase 3** — MCP server (@colaborate/mcp-server package) | ✅ | `c1283b2` | `v0.4.0-phase-3` |
 | **Phase 4a** — Sourcemap uploader CLI + FsSourcemapStore + widget dev-mode `_debugSource` capture | ✅ | `d8974f0` | `v0.5.0-phase-4a` |
 | **Phase 4b** — Screenshot ingest pipeline + `attach_screenshot` MCP tool + MCP session bundles carry real screenshot metadata + widget opt-in html2canvas capture | ✅ | `4dba14c` | `v0.5.1-phase-4b` |
+| **Phase 5** — Triage worker (Anthropic + Sonnet 4.6) + GitHub adapter + manual retry route + in-process event bus + apps/demo wiring | ✅ | `35eb4e5` | `v0.6.0-phase-5` |
 
-**Current main branch state — all green:**
+**Current branch state — all green:**
 
-- `bun run build` → 8/8 packages build (11/11 check tasks pass)
-- `bun run test:run` → **1108 / 1108 unit tests pass** (was 1053 for Phase 4a; +55 from screenshot conformance × 2 adapters + FsScreenshotStore + screenshot-hash + routes-screenshots + handler-screenshots + ScreenshotResponse refactor + non-OK client test + screenshot module + api-client + launcher integration × 3 + MCP populate tests × 2 + attach_screenshot tool × 3 + smoke extension + session-route Bearer × 4)
-- `bun run test:e2e` → **109/109 Playwright pass, 2 skipped** — regression caught + fixed mid-phase (Task 10's html2canvas dynamic import triggered tsup's default ESM code-splitting, emitting a 120-byte `chunk-XXXX.js` that `dist/index.js` statically imported at the top; the E2E server only serves `/widget.js` so the chunk 404'd and the widget module failed to load. Fixed by `splitting: false` in `packages/widget/tsup.config.ts` — all code now inlined into `dist/index.js`, bundle grows 140 KB → 340 KB as the price of single-file distribution)
-- `bun run lint` → **biome clean across 231 files, zero warnings** (Task 0 removed the pre-existing harmless warning in `routes-sourcemaps.test.ts` — Phase 4b entered and exited warning-free)
+- `bun run build` → **10/10 packages build** (15/15 check tasks pass)
+- `bun run test:run` → **1234 / 1234 unit tests pass** (was 1108 for Phase 4b; +126 across Phase 5: 9 core types/schema + 11 conformance × 2 conforming adapters + 6 prisma fake + 11 integration-github + 6 event-bus + 12 parse + 13 bundle + 3 prompt + 10 worker + 5 routes-triage + 3 handler-triage)
+- `bun run lint` → **biome clean across 259 files**, 2 pre-existing infos (use-literal-keys hints in github client.test.ts; intentional pattern consistency)
+
+## What Phase 5 shipped
+
+**The "submit → issue" loop is closed.** When a Colaborate session is submitted, an LLM-driven triage worker reads the bundle, groups the feedbacks into 1+ GitHub issues, files them, and writes the issue URLs back onto the related feedbacks.
+
+- **Two new packages:**
+  - `@colaborate/triage` — `TriageWorker` class, `TriageEventBus` interface + `InProcessEventBus` impl, `parseTriageOutput` with strict coverage validation, `loadSessionBundle` + `serializeBundle` + `geometryHint`, `TRIAGE_SYSTEM_PROMPT` (cached system block + 2 worked few-shot examples), `buildTriagePrompt`. Depends on `@anthropic-ai/sdk`.
+  - `@colaborate/integration-github` — `createGitHubAdapter({token, repo})` returns a `TrackerAdapter`. Direct fetch (no Octokit). `GitHubAdapterError` with status + verbatim response body. `linkResolve` returns `{resolved: false}` (Phase 6+ may implement bidirectional sync).
+- **3 new `ColaborateStore` methods** (interface + Memory/LocalStorage/Prisma impls + 11-test conformance suite): `setFeedbackExternalIssue(id, {provider, issueId, issueUrl})`, `markSessionTriaged(id)`, `markSessionFailed(id, reason)`. `markSession*` enforce a state-machine guard — only `submitted | failed → triaged | failed` transitions allowed (raise `StoreValidationError` otherwise).
+- **`SESSION_STATUSES` extended with `"failed"`.** `SessionRecord.failureReason: string | null` — populated on `markSessionFailed`, cleared on `markSessionTriaged`. Additive Prisma column (`failureReason String?  @db.Text`); no data backfill.
+- **`TrackerAdapter` interface + `IssueInput` / `IssueRef` / `IssuePatch` types** in `@colaborate/core` so the triage worker depends on the interface, not on integration-github (Phase 6 Linear adapter drops in beside it).
+- **Trigger:** in-process fire-and-forget. `handleSubmitSession` now accepts an optional event-bus; emits `session.submitted` after the status flip. `TriageWorker.start()` subscribes to that event. `void this.triageSession().catch()` runs in the same Node process — no second deploy unit.
+- **Manual retry HTTP route:** `POST /api/colaborate/sessions/:id/triage` calls `worker.triageSession()` synchronously (caller sees errors). Returns 200 / 409 (wrong state) / 404 (no session) / 500 (worker reported failed) / 503 (no worker configured). On retry from `failed`, the worker filters out already-linked feedbacks and only files issues for unlinked ones — if all are linked, immediately `markSessionTriaged` without an LLM call.
+- **5 distinct failure modes** captured into `failureReason` with `<source>:` prefix: `anthropic: <msg>`, `parse: <msg>` (parse OR coverage error), `github: created N of M, then: <msg>` (partial-progress preserved), and "session not found" / unknown-status defaults.
+- **Strict coverage validation:** every input feedbackId must appear in exactly one issue's `relatedFeedbackIds`. Drops, duplicates, or unknown ids → `TriageCoverageError` → `markSessionFailed` with the diagnostic. Fail loud beats silent wrong-grouping.
+- **Prompt design:** ~3K-token system block with `cache_control: ephemeral` (5-min TTL — every triage in a burst hits warm cache). Output contract is JSON-only (no prose, no fences). `parse.ts` is defensive (extracts the outermost `[…]` even if the model wraps it). User message is deterministic JSON via `serializeBundle` — `geometryHint` turns each annotation into a short English phrase ("rectangle covering 50% × 30% of the anchor") rather than raw fractions.
+- **Default model:** `claude-sonnet-4-6`. Override via `COLABORATE_TRIAGE_MODEL` env var.
+- **`createColaborateHandler` extended** with `triage?` and `eventBus?` options. Both optional — missing means triage is silently skipped, `submitSession` still works (status flips to `submitted` and stays there).
+- **`apps/demo` wiring:** all triage env vars optional. Triage activates only when `GITHUB_TOKEN` + `COLABORATE_GITHUB_REPO` + `ANTHROPIC_API_KEY` are all set.
+- **Testing:** +126 tests (1108 → 1234). No Playwright E2E (Phase 5 is purely backend). 10 packages build, 15/15 typecheck, biome clean.
+- **Open follow-ups:** real-GitHub smoke test before Phase 7 dogfood. Per-screenshot MCP `blob` resources for vision (Phase 4b chip #2) deferred. Polling/webhook/queue event-bus impls deferred (interface exists). Linear adapter is Phase 6.
 
 ## What Phase 4b shipped
 

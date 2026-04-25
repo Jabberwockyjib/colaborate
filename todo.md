@@ -1,23 +1,29 @@
 # TODO — Colaborate
 
 ## In Progress
-_(nothing in-flight — Phase 4b shipped cleanly, tag `v0.5.1-phase-4b`)_
+_(nothing in-flight — Phase 5 shipped cleanly, tag `v0.6.0-phase-5`)_
 
 ## Next Up
 
-- [ ] **Phase 5** — Triage worker (Claude API) + GitHub adapter. On `session.submitted`, load the bundle via `ColaborateStore`, call Claude with prompt cache on the template, LLM outputs JSON array of issues, tracker adapter creates them.
+- [ ] **Real-GitHub smoke test for Phase 5** — set `GITHUB_TOKEN` + `COLABORATE_GITHUB_REPO=Jabberwockyjib/colaborate` + `ANTHROPIC_API_KEY`, run `bun run dev` in `apps/demo`, draft a 3-feedback session, submit, verify 1+ GH issues appear at https://github.com/Jabberwockyjib/colaborate/issues within ~10s with `externalIssueUrl` populated and session status flipped to `triaged`. Required before Phase 7 dogfood.
+- [ ] **Phase 6** — Linear adapter (`@colaborate/integration-linear`) + config switch (`COLABORATE_TRACKER=github|linear`). Drops in beside `integration-github`, same `TrackerAdapter` interface, no other code changes.
 
-## Phase 6+
+## Phase 7+
 
-- [ ] **Phase 6** — Linear adapter + config switch (`COLABORATE_TRACKER=github|linear`)
 - [ ] **Phase 7** — Deploy to sop-hub, wire into parkland, internal dogfood
 - [ ] **Phase 8** — README polish + public OSS release
 
-## Phase 4b follow-ups (chips spawned during review)
+## Phase 5 follow-ups (deferred during implementation)
 
-- [ ] **Fix screenshot attach 500→400 for bad dataUrl** — introduce `StoreValidationError` in `@colaborate/core` (sibling to `StoreNotFoundError` / `StoreDuplicateError`), have Memory/LocalStorage/Prisma stores throw it from `decodePngDataUrl` paths, then in both `handleAttachScreenshot` (`packages/adapter-prisma/src/routes-screenshots.ts`) and the `attach_screenshot` MCP tool (`packages/mcp-server/src/tools/attach-screenshot.ts`), map `StoreValidationError` → 400 / `isError: true`, keep everything else → 500. Currently clients see 500 on inputs that pass the Zod regex but fail downstream base64 decode. Test gaps: 400-on-store-validation-throw, 500-on-unrelated-throw. Flagged by Task 7 + Task 14 reviewers.
-- [ ] **Per-screenshot MCP resources with `blob` + `mimeType: "image/png"`** — Phase 4b emits URL-only screenshots in session bundles to keep context windows sane. If LLM vision workflows need the pixels, expose each screenshot as its own MCP resource URI (e.g. `colaborate://screenshot/{id}`) with `blob: base64`. Spec says "JSON + base64 screenshots" so the path is sanctioned, just deferred.
-- [ ] **Env-configurable screenshot size cap** — currently hardcoded `14 * 1024 * 1024` bytes in both `screenshotAttachSchema` (HTTP) and `attach_screenshot`'s MCP tool input schema. Promote to a shared const in `@colaborate/core` and thread through `HandlerOptions.screenshotMaxBytes` + the MCP `ServerContext`.
+- [ ] **Per-screenshot MCP resources with `blob` + `mimeType: "image/png"`** — same chip as Phase 4b. Triage prompt currently sends URLs only; if LLM vision is needed for triage, expose each screenshot as its own MCP resource URI (e.g. `colaborate://screenshot/{id}`) with `blob: base64`. Spec says "JSON + base64 screenshots" so the path is sanctioned, just deferred.
+- [ ] **Auto-retry on transient triage errors** — current behavior is manual-retry only. Consider exponential backoff for `anthropic: 429` / `github: 5xx` failures before marking the session `failed`.
+- [ ] **Polling / webhook / queue event-bus impls** — interface (`TriageEventBus`) is in place; only `InProcessEventBus` is implemented. If/when a second deploy unit becomes worthwhile, add `PollingEventBus` (polls `listSessions(status="submitted")`) or `WebhookEventBus`.
+- [ ] **GitHub App auth** — current PAT auth is single-tenant. App auth needed if Colaborate ever runs multi-tenant. `TrackerAdapter` interface insulates worker code from this.
+- [ ] **Optional polish:** `pre-existing` biome-info hints in `packages/integration-github/__tests__/client.test.ts` (use-literal-keys on `headers["Authorization"]` etc.) — kept for pattern consistency with `headers["X-GitHub-Api-Version"]` (which can't use dot notation). Could be silenced with explicit `// biome-ignore` comments.
+
+## Phase 4b follow-ups still open
+
+- [ ] **Per-screenshot MCP resources with `blob`** — same as the Phase 5 entry above; merge once one of them lands.
 - [ ] **Optional polish:** extract `decodePngDataUrl` to `@colaborate/core/src/screenshot-codec.ts` if a third async caller ever appears (today it's duplicated across adapter-memory + adapter-localstorage; Prisma uses a sync Node `Buffer.from` variant).
 - [ ] **Optional polish:** `server.test.ts`'s "lists all N tools" assertion is too rigid — adding a new tool forces touching an unrelated test. Consider exporting `ALL_TOOL_NAMES` from `tools/index.ts` and asserting the sorted name list against that single source of truth.
 
