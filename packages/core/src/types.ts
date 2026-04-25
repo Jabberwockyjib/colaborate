@@ -27,6 +27,14 @@ export interface ColaborateConfig {
   locale?: "fr" | "en" | (string & {}) | undefined;
   /** Called when the widget is skipped (production mode, mobile viewport) */
   onSkip?: (reason: "production" | "mobile") => void;
+  /**
+   * When `true`, the widget captures a viewport screenshot via html2canvas and attaches it
+   * to each submitted feedback. Adds ~50 KB to the widget bundle (html2canvas is
+   * lazy-imported on first use). Defaults to `false`.
+   */
+  captureScreenshots?: boolean;
+  /** Optional API key for widget-authenticated routes (screenshots). Sent as `Authorization: Bearer`. */
+  apiKey?: string;
 
   // Events
   /** Called when the feedback panel is opened. */
@@ -87,8 +95,8 @@ export type FeedbackStatus = (typeof FEEDBACK_STATUSES)[number];
 // Session
 // ---------------------------------------------------------------------------
 
-/** Review session lifecycle. `drafting` is the widget's local session; `submitted` is posted to the server; `triaged` means the triage worker has processed it; `archived` is a soft delete. */
-export const SESSION_STATUSES = ["drafting", "submitted", "triaged", "archived"] as const;
+/** Review session lifecycle. `drafting` is the widget's local session; `submitted` is posted to the server; `triaged` means the triage worker has processed it; `failed` means the triage worker errored and the session needs manual retry; `archived` is a soft delete. */
+export const SESSION_STATUSES = ["drafting", "submitted", "triaged", "failed", "archived"] as const;
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
 
 /** Input for creating a session — status defaults to `drafting`. */
@@ -109,6 +117,8 @@ export interface SessionRecord {
   submittedAt: Date | null;
   triagedAt: Date | null;
   notes: string | null;
+  /** Populated by the triage worker on `markSessionFailed`. Cleared on `markSessionTriaged`. */
+  failureReason: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -123,8 +133,52 @@ export interface SessionResponse {
   submittedAt: string | null;
   triagedAt: string | null;
   notes: string | null;
+  failureReason: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Tracker integration — Phase 5 (triage worker → external issue trackers)
+// ---------------------------------------------------------------------------
+
+/** Input for creating a tracker issue. */
+export interface IssueInput {
+  title: string;
+  body: string;
+  labels?: string[] | undefined;
+}
+
+/** Returned reference for a created tracker issue. */
+export interface IssueRef {
+  provider: "github" | "linear";
+  /** Provider-specific id. For GitHub: the issue number as a string. */
+  issueId: string;
+  /** Canonical, browser-friendly URL. */
+  issueUrl: string;
+}
+
+/** Patch payload for updating an existing tracker issue. All fields optional. */
+export interface IssuePatch {
+  state?: "open" | "closed" | undefined;
+  body?: string | undefined;
+  labels?: string[] | undefined;
+}
+
+/**
+ * Abstract tracker adapter. Implementations live in `@colaborate/integration-github`
+ * (Phase 5) and `@colaborate/integration-linear` (Phase 6+). The triage worker
+ * depends on this interface, not on any specific implementation.
+ */
+export interface TrackerAdapter {
+  readonly name: "github" | "linear";
+  createIssue(input: IssueInput): Promise<IssueRef>;
+  updateIssue(ref: IssueRef, patch: IssuePatch): Promise<void>;
+  /**
+   * Phase 5 placeholder — used in Phase 6+ for tracker → feedback resolution sync.
+   * v0 implementations return `{ resolved: false }`.
+   */
+  linkResolve(ref: IssueRef): Promise<{ resolved: boolean }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -283,6 +337,22 @@ export class StoreDuplicateError extends Error {
   }
 }
 
+/**
+ * Thrown when the store rejects an input as invalid (e.g. malformed PNG dataUrl that
+ * passes a Zod regex but fails downstream decode).
+ *
+ * Handlers translate this to HTTP 400 — it indicates a client error, not a server
+ * fault. Adapters MUST throw this (not raw decode errors) so the handler layer can
+ * distinguish bad input from infrastructure failures.
+ */
+export class StoreValidationError extends Error {
+  readonly code = "STORE_VALIDATION" as const;
+  constructor(message = "Invalid input") {
+    super(message);
+    this.name = "StoreValidationError";
+  }
+}
+
 /** Type guard — works for `StoreNotFoundError` and ORM-specific equivalents (e.g. Prisma P2025). */
 export function isStoreNotFound(error: unknown): boolean {
   if (error instanceof StoreNotFoundError) return true;
@@ -303,6 +373,14 @@ export function isStoreDuplicate(error: unknown): boolean {
   if (code === "STORE_DUPLICATE") return true;
   // Backwards compat: Prisma's P2002
   return code === "P2002";
+}
+
+/** Type guard — works for `StoreValidationError` across module-duplication boundaries. */
+export function isStoreValidation(error: unknown): boolean {
+  if (error instanceof StoreValidationError) return true;
+  if (typeof error !== "object" || error === null || !("code" in error)) return false;
+  const code = (error as { code: string }).code;
+  return code === "STORE_VALIDATION";
 }
 
 // ---------------------------------------------------------------------------
@@ -334,6 +412,45 @@ export function flattenAnnotation(ann: AnnotationPayload): AnnotationCreateInput
 // ---------------------------------------------------------------------------
 // Abstract Store — adapter pattern
 // ---------------------------------------------------------------------------
+
+/** Persisted metadata for an attached screenshot. The PNG bytes live elsewhere (FS, localStorage, in-memory Map). */
+export interface ScreenshotRecord {
+  /** Stable id — hex SHA-256 of the decoded PNG bytes. Dedup key: same content ⇒ same id. */
+  id: string;
+  /** Feedback this screenshot is attached to. */
+  feedbackId: string;
+  /**
+   * Relative URL at which the PNG bytes can be fetched. For Prisma-backed deployments this is
+   * `/api/colaborate/feedbacks/{feedbackId}/screenshots/{id}`. Memory/LocalStorage stores that
+   * have no HTTP surface still set a URL of this shape so clients building session bundles can
+   * present a consistent shape; whether the URL actually resolves is environment-dependent.
+   */
+  url: string;
+  /** Byte size of the stored PNG (decoded from the dataUrl). */
+  byteSize: number;
+  /** When the record was first attached. Re-attaching identical content refreshes this value. */
+  createdAt: Date;
+}
+
+/** HTTP/JSON-serialized shape of a `ScreenshotRecord`. Dates are ISO strings on the wire. */
+export interface ScreenshotResponse {
+  id: string;
+  feedbackId: string;
+  url: string;
+  byteSize: number;
+  createdAt: string;
+}
+
+/**
+ * Aggregated view of a session loaded by the triage worker.
+ * Built by `loadSessionBundle` in `@colaborate/triage`.
+ */
+export interface SessionBundle {
+  session: SessionRecord;
+  feedbacks: FeedbackRecord[];
+  /** Map keyed by `feedbackId`. Empty array (not undefined) when a feedback has no screenshots. */
+  screenshotsByFeedbackId: Record<string, ScreenshotRecord[]>;
+}
 
 /**
  * Abstract storage interface for Colaborate.
@@ -372,6 +489,44 @@ export interface ColaborateStore {
   listSessions(projectName: string, status?: SessionStatus): Promise<SessionRecord[]>;
   /** Flip status to `submitted` and stamp `submittedAt`. Throws `StoreNotFoundError` if `id` does not exist. */
   submitSession(id: string): Promise<SessionRecord>;
+  /**
+   * Attach a screenshot to a feedback. The `dataUrl` must be of the form
+   * `data:image/png;base64,<...>`. Implementations decode, hash, and persist.
+   * Idempotent on `{feedbackId, hash}` — re-attaching identical bytes returns the existing record
+   * with an updated `createdAt`. Does NOT validate that `feedbackId` refers to an existing
+   * feedback; the calling HTTP handler is responsible for that check.
+   */
+  attachScreenshot(feedbackId: string, dataUrl: string): Promise<ScreenshotRecord>;
+  /** List all screenshots attached to a feedback, newest first. Empty array (not error) when none. */
+  listScreenshots(feedbackId: string): Promise<ScreenshotRecord[]>;
+  /**
+   * Persist tracker integration metadata onto a feedback record.
+   * Called by the triage worker (`@colaborate/triage`) after creating an issue
+   * via a `TrackerAdapter`.
+   *
+   * Throws `StoreNotFoundError` if `id` does not exist.
+   */
+  setFeedbackExternalIssue(
+    id: string,
+    data: { provider: string; issueId: string; issueUrl: string },
+  ): Promise<FeedbackRecord>;
+  /**
+   * Transition a session from `submitted` or `failed` to `triaged`. Stamps
+   * `triagedAt` to `now`. Clears `failureReason` to `null`.
+   *
+   * Throws `StoreNotFoundError` if `id` does not exist.
+   * Throws `StoreValidationError` if current status ∉ {`submitted`, `failed`}.
+   */
+  markSessionTriaged(id: string): Promise<SessionRecord>;
+  /**
+   * Transition a session from `submitted` or `failed` to `failed`. Persists
+   * `reason` into `failureReason`. (`failed → failed` is permitted so retry-then-
+   * fail-again works.)
+   *
+   * Throws `StoreNotFoundError` if `id` does not exist.
+   * Throws `StoreValidationError` if current status ∉ {`submitted`, `failed`}.
+   */
+  markSessionFailed(id: string, reason: string): Promise<SessionRecord>;
 }
 
 /** Payload sent from the widget to the server when submitting feedback. */
@@ -393,6 +548,12 @@ export interface FeedbackPayload {
   mentions?: Mention[] | undefined;
   /** Optional — defaults to "open" server-side. Widget sets "draft" when session mode is active. */
   status?: FeedbackStatus | undefined;
+  /** Source file resolved by the widget's fiber `_debugSource` walk (dev mode). Server persists as-is. */
+  sourceFile?: string | undefined;
+  /** 1-indexed line within `sourceFile`. */
+  sourceLine?: number | undefined;
+  /** 0-indexed column within `sourceFile`. */
+  sourceColumn?: number | undefined;
   /** Client-generated UUID for deduplication */
   clientId: string;
 }

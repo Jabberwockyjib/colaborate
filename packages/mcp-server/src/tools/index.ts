@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerContext } from "../types.js";
+import * as attachScreenshot from "./attach-screenshot.js";
 import * as getComponentFeedback from "./get-component-feedback.js";
 import * as getSession from "./get-session.js";
 import * as listFeedback from "./list-feedback.js";
@@ -15,4 +16,5 @@ export function registerAllTools(server: McpServer, ctx: ServerContext): void {
   getComponentFeedback.register(server, ctx);
   resolveFeedback.register(server, ctx);
   searchFeedback.register(server, ctx);
+  attachScreenshot.register(server, ctx);
 }

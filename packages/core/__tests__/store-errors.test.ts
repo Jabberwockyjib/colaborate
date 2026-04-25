@@ -4,8 +4,10 @@ import {
   flattenAnnotation,
   isStoreDuplicate,
   isStoreNotFound,
+  isStoreValidation,
   StoreDuplicateError,
   StoreNotFoundError,
+  StoreValidationError,
 } from "../src/types.js";
 
 // ---------------------------------------------------------------------------
@@ -74,6 +76,69 @@ describe("StoreDuplicateError", () => {
     const err = new StoreDuplicateError();
     expect(err).toBeInstanceOf(Error);
     expect(err).toBeInstanceOf(StoreDuplicateError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// StoreValidationError
+// ---------------------------------------------------------------------------
+
+describe("StoreValidationError", () => {
+  it("has default message", () => {
+    const err = new StoreValidationError();
+    expect(err.message).toBe("Invalid input");
+  });
+
+  it("accepts a custom message", () => {
+    const err = new StoreValidationError("invalid PNG dataUrl");
+    expect(err.message).toBe("invalid PNG dataUrl");
+  });
+
+  it("has code STORE_VALIDATION", () => {
+    const err = new StoreValidationError();
+    expect(err.code).toBe("STORE_VALIDATION");
+  });
+
+  it("has name StoreValidationError", () => {
+    const err = new StoreValidationError();
+    expect(err.name).toBe("StoreValidationError");
+  });
+
+  it("is an instance of Error", () => {
+    const err = new StoreValidationError();
+    expect(err).toBeInstanceOf(Error);
+    expect(err).toBeInstanceOf(StoreValidationError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isStoreValidation
+// ---------------------------------------------------------------------------
+
+describe("isStoreValidation", () => {
+  it("returns true for StoreValidationError", () => {
+    expect(isStoreValidation(new StoreValidationError())).toBe(true);
+  });
+
+  it("returns true for plain object with code=STORE_VALIDATION (handles bundler module duplication)", () => {
+    expect(isStoreValidation({ code: "STORE_VALIDATION" })).toBe(true);
+    expect(isStoreValidation(Object.assign(new Error("bad"), { code: "STORE_VALIDATION" }))).toBe(true);
+  });
+
+  it("returns false for sibling error types", () => {
+    expect(isStoreValidation(new StoreNotFoundError())).toBe(false);
+    expect(isStoreValidation(new StoreDuplicateError())).toBe(false);
+  });
+
+  it("returns false for plain Error", () => {
+    expect(isStoreValidation(new Error("oops"))).toBe(false);
+  });
+
+  it("returns false for null/undefined/string/number", () => {
+    expect(isStoreValidation(null)).toBe(false);
+    expect(isStoreValidation(undefined)).toBe(false);
+    expect(isStoreValidation("STORE_VALIDATION")).toBe(false);
+    expect(isStoreValidation(42)).toBe(false);
   });
 });
 

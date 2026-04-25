@@ -1,4 +1,4 @@
-# Colaborate — session status (2026-04-21)
+# Colaborate — session status (2026-04-25)
 
 ## What's landed
 
@@ -11,13 +11,130 @@
 | **Phase 1c** — Widget shape UI (picker + 6 drawing modes + shortcuts) | ✅ | `f2f141e` | `v0.1.1-phase-1c` |
 | **Phase 2** — Widget session drafting UX + session HTTP routes | ✅ | `b13b8bc` | `v0.3.0-phase-2` |
 | **Phase 3** — MCP server (@colaborate/mcp-server package) | ✅ | `c1283b2` | `v0.4.0-phase-3` |
+| **Phase 4a** — Sourcemap uploader CLI + FsSourcemapStore + widget dev-mode `_debugSource` capture | ✅ | `d8974f0` | `v0.5.0-phase-4a` |
+| **Phase 4b** — Screenshot ingest pipeline + `attach_screenshot` MCP tool + MCP session bundles carry real screenshot metadata + widget opt-in html2canvas capture | ✅ | `4dba14c` | `v0.5.1-phase-4b` |
+| **Phase 5** — Triage worker (Anthropic + Sonnet 4.6) + GitHub adapter + manual retry route + in-process event bus + apps/demo wiring | ✅ | `35eb4e5` | `v0.6.0-phase-5` |
 
-**Current main branch state — all green:**
+**Current branch state — all green:**
 
-- `bun run build` → 8/8 packages build (11/11 check tasks pass)
-- `bun run test:run` → **993 / 993 unit tests pass** (was 943 for Phase 2; +50 from mcp-server tool/resource/prompt/transport/integration tests + 2 core store-errors robustness tests)
-- `bun run test:e2e` → 109/109 Playwright pass, 2 skipped (touch — mobile-only; unchanged — Phase 3 has no browser surface)
-- `bun run lint` → biome clean (201 files)
+- `bun run build` → **10/10 packages build** (15/15 check tasks pass)
+- `bun run test:run` → **1234 / 1234 unit tests pass** (was 1108 for Phase 4b; +126 across Phase 5: 9 core types/schema + 11 conformance × 2 conforming adapters + 6 prisma fake + 11 integration-github + 6 event-bus + 12 parse + 13 bundle + 3 prompt + 10 worker + 5 routes-triage + 3 handler-triage)
+- `bun run lint` → **biome clean across 259 files**, 2 pre-existing infos (use-literal-keys hints in github client.test.ts; intentional pattern consistency)
+
+## What Phase 5 shipped
+
+**The "submit → issue" loop is closed.** When a Colaborate session is submitted, an LLM-driven triage worker reads the bundle, groups the feedbacks into 1+ GitHub issues, files them, and writes the issue URLs back onto the related feedbacks.
+
+- **Two new packages:**
+  - `@colaborate/triage` — `TriageWorker` class, `TriageEventBus` interface + `InProcessEventBus` impl, `parseTriageOutput` with strict coverage validation, `loadSessionBundle` + `serializeBundle` + `geometryHint`, `TRIAGE_SYSTEM_PROMPT` (cached system block + 2 worked few-shot examples), `buildTriagePrompt`. Depends on `@anthropic-ai/sdk`.
+  - `@colaborate/integration-github` — `createGitHubAdapter({token, repo})` returns a `TrackerAdapter`. Direct fetch (no Octokit). `GitHubAdapterError` with status + verbatim response body. `linkResolve` returns `{resolved: false}` (Phase 6+ may implement bidirectional sync).
+- **3 new `ColaborateStore` methods** (interface + Memory/LocalStorage/Prisma impls + 11-test conformance suite): `setFeedbackExternalIssue(id, {provider, issueId, issueUrl})`, `markSessionTriaged(id)`, `markSessionFailed(id, reason)`. `markSession*` enforce a state-machine guard — only `submitted | failed → triaged | failed` transitions allowed (raise `StoreValidationError` otherwise).
+- **`SESSION_STATUSES` extended with `"failed"`.** `SessionRecord.failureReason: string | null` — populated on `markSessionFailed`, cleared on `markSessionTriaged`. Additive Prisma column (`failureReason String?  @db.Text`); no data backfill.
+- **`TrackerAdapter` interface + `IssueInput` / `IssueRef` / `IssuePatch` types** in `@colaborate/core` so the triage worker depends on the interface, not on integration-github (Phase 6 Linear adapter drops in beside it).
+- **Trigger:** in-process fire-and-forget. `handleSubmitSession` now accepts an optional event-bus; emits `session.submitted` after the status flip. `TriageWorker.start()` subscribes to that event. `void this.triageSession().catch()` runs in the same Node process — no second deploy unit.
+- **Manual retry HTTP route:** `POST /api/colaborate/sessions/:id/triage` calls `worker.triageSession()` synchronously (caller sees errors). Returns 200 / 409 (wrong state) / 404 (no session) / 500 (worker reported failed) / 503 (no worker configured). On retry from `failed`, the worker filters out already-linked feedbacks and only files issues for unlinked ones — if all are linked, immediately `markSessionTriaged` without an LLM call.
+- **5 distinct failure modes** captured into `failureReason` with `<source>:` prefix: `anthropic: <msg>`, `parse: <msg>` (parse OR coverage error), `github: created N of M, then: <msg>` (partial-progress preserved), and "session not found" / unknown-status defaults.
+- **Strict coverage validation:** every input feedbackId must appear in exactly one issue's `relatedFeedbackIds`. Drops, duplicates, or unknown ids → `TriageCoverageError` → `markSessionFailed` with the diagnostic. Fail loud beats silent wrong-grouping.
+- **Prompt design:** ~3K-token system block with `cache_control: ephemeral` (5-min TTL — every triage in a burst hits warm cache). Output contract is JSON-only (no prose, no fences). `parse.ts` is defensive (extracts the outermost `[…]` even if the model wraps it). User message is deterministic JSON via `serializeBundle` — `geometryHint` turns each annotation into a short English phrase ("rectangle covering 50% × 30% of the anchor") rather than raw fractions.
+- **Default model:** `claude-sonnet-4-6`. Override via `COLABORATE_TRIAGE_MODEL` env var.
+- **`createColaborateHandler` extended** with `triage?` and `eventBus?` options. Both optional — missing means triage is silently skipped, `submitSession` still works (status flips to `submitted` and stays there).
+- **`apps/demo` wiring:** all triage env vars optional. Triage activates only when `GITHUB_TOKEN` + `COLABORATE_GITHUB_REPO` + `ANTHROPIC_API_KEY` are all set.
+- **Testing:** +126 tests (1108 → 1234). No Playwright E2E (Phase 5 is purely backend). 10 packages build, 15/15 typecheck, biome clean.
+- **Open follow-ups:** real-GitHub smoke test before Phase 7 dogfood. Per-screenshot MCP `blob` resources for vision (Phase 4b chip #2) deferred. Polling/webhook/queue event-bus impls deferred (interface exists). Linear adapter is Phase 6.
+
+## What Phase 4b shipped
+
+Screenshot ingest + upload + MCP exposure, end-to-end. All API-key-authed when a key is configured; defaults remain anonymous-friendly.
+
+- **`ColaborateStore` extended with `attachScreenshot` + `listScreenshots`** — NOT a sibling interface (contrast Phase 4a's `SourcemapStore`). Screenshots are user-facing data tied to feedbacks, so all three adapters implement. `ScreenshotRecord` has `{id, feedbackId, url, byteSize, createdAt: Date}`; `id` is the 64-char hex SHA-256 of the decoded PNG bytes (content-addressed dedup + filename). A new `ScreenshotResponse` wire type (with `createdAt: string`) mirrors `SessionResponse` / `FeedbackResponse`.
+- **`FsScreenshotStore` in `@colaborate/adapter-prisma`** — mirrors `FsSourcemapStore` layout: `{root}/{feedbackId}/{hash}.png` + sibling `index.json`. `readIndex` distinguishes ENOENT (empty) from real FS/JSON errors (rethrow — no silent data loss). Re-put on existing hash refreshes `createdAt` AND moves entry to front of list. `dirFor` uses positive allowlist `/^[A-Za-z0-9_-]+$/` for path-traversal defense-in-depth. 9 unit tests.
+- **`hashPngBytes(bytes)` helper** — SHA-256 hex digest via `node:crypto.createHash`. 3 unit tests.
+- **Memory + LocalStorage adapters** implement the two new methods with `atob` + Web Crypto (`crypto.subtle.digest`). LocalStorage persists metadata only (no bytes — would exceed quota). Duplicated decode helper across both adapters is intentional (Prisma uses a synchronous Node `Buffer.from(base64)` path instead — three different stores, two distinct decoders).
+- **Three new HTTP routes on `@colaborate/adapter-prisma`:**
+  - `POST /api/colaborate/feedbacks/:id/screenshots` — attach. Zod-validated `{dataUrl}` (14 MiB base64 cap ≈ 10 MiB decoded).
+  - `GET /api/colaborate/feedbacks/:id/screenshots` — list metadata.
+  - `GET /api/colaborate/feedbacks/:id/screenshots/:hash` — serve PNG bytes with `content-type: image/png` + `cache-control: private, max-age=3600`.
+  - All three always require API key auth when `apiKey` is set (posture matches Phase 2 sessions + Phase 4a sourcemaps).
+- **`createColaborateHandler` options extended:** new `screenshotStore` + `screenshotStorePath` options. Path auto-instantiates `FsScreenshotStore`. `PrismaStore` constructor now takes an optional `screenshotStore` as 2nd arg; `attachScreenshot` throws actionable error when unconfigured, `listScreenshots` returns `[]`.
+- **Widget `captureViewportScreenshot(ignoreSelectors)`** in `packages/widget/src/screenshot.ts` — lazy `await import("html2canvas")`, filters Colaborate-owned DOM (`colaborate-widget` custom element + `#colaborate-markers` container — both DOM-verified against actual markup), returns `data:image/png;base64,…` or `null`. Fails open; `console.warn`s the error for debuggability.
+- **`ColaborateConfig.captureScreenshots?: boolean`** (default `false`) opts into the capture path. `ColaborateConfig.apiKey?: string` forwards as Bearer on the widget's screenshot routes (and, via a Phase 4b-surfaced fix, the Phase 2 session routes which were missing it).
+- **`WidgetClient.attachScreenshot(feedbackId, dataUrl)`** on both `ApiClient` (HTTP POST with Bearer when `apiKey` set) + `StoreClient` (direct store delegation, ISO-serializes `Date`).
+- **Launcher integration** — after `client.sendFeedback` resolves, a detached `void (async () => {…})()` block captures + uploads the screenshot when `config.captureScreenshots === true`. Runs fire-and-forget so capture/upload failures never delay the `feedback.sent.confirmation` toast. All errors routed through the existing `log` debug helper.
+- **MCP `get_session` tool + `colaborate://session/{id}` resource** now populate real `screenshots: ScreenshotRecord[]` by iterating linked feedbacks and calling `store.listScreenshots`. "Phase 4 limitation" caveat text removed from both descriptions. URLs only in the bundle — embedding base64 bytes would blow out LLM context on a multi-screenshot session.
+- **New MCP tool `attach_screenshot`** in `packages/mcp-server/src/tools/attach-screenshot.ts` — Zod input `{feedbackId, dataUrl}` with regex + 14 MiB size cap mirroring the HTTP surface. Try/catch returns `{isError: true}` on any store throw. Wired into `registerAllTools` as the 7th tool. Smoke test in `server.test.ts` now round-trips `attach_screenshot` → `colaborate://session/{id}` read and asserts the screenshot appears in the bundle.
+- **MCP server bumped from 0.4.0 → 0.5.0** in `packages/mcp-server/src/server.ts`'s `MCP_SERVER_VERSION` constant (workspace package.json stays at `0.0.0` per the repo's existing convention — the code constant is the handshake value).
+- **Widget tsup bundling fix** — `splitting: false` added to `packages/widget/tsup.config.ts` so the `noExternal` bundle guarantees a single `dist/index.js` output. Without this, Task 10's dynamic `import("html2canvas")` caused tsup's default ESM splitting to emit chunk files that the E2E server (and typical consumers) don't serve. Widget now bundles html2canvas unconditionally (~200 KB inlined) — the price of single-file distribution, consistent with Phase 1c's treatment of `perfect-freehand`.
+- **Testing:** +55 Vitest tests across 11 new/modified test files covering all 3 adapters' conformance, FS store round-trip + corruption + traversal, HTTP route handlers + handler integration, widget screenshot module + client method + launcher integration × 3, MCP tool + resource + attach tool + size cap + smoke. E2E remains 109 pass + 2 skip (no new E2E coverage — Phase 4b is opt-in behind `captureScreenshots`, which the test pages don't set).
+- **Known follow-ups** (chips spawned mid-phase):
+  - *Fix screenshot attach 500→400 for bad dataUrl* — introduce `StoreValidationError` in `@colaborate/core`, have adapters throw it from decode paths, remap to 400 in both the HTTP handler and the MCP tool. Requested by Task 7 + Task 14 reviewers.
+  - *Forward apiKey Bearer on session routes* — already landed mid-phase (`f831d44`). Pre-existing Phase 2 bug exposed when Task 11 added the `authHeaders()` pattern and the session methods were seen to lack it.
+- **Purely additive to the database.** No new Prisma tables. Screenshots live on the filesystem under `SCREENSHOT_STORE_PATH/{feedbackId}/{hash}.png`.
+- **Deferred to later phases:** per-screenshot MCP resources with embedded `blob` content (image/png) for LLM vision workflows; env-configurable size cap; `externalIssueUrl` write-through (Phase 6); OAuth 2.1 + PKCE (Phase 7).
+
+## Phase 4b commit trail
+
+```
+4dba14c  fix(widget): disable tsup code-splitting to keep single-file bundle
+9584107  chore(mcp-server): bump to 0.5.0 + smoke-test attach_screenshot
+f831d44  fix(widget): forward apiKey Bearer on session routes
+cfe35f8  fix(mcp-server): enforce screenshot size cap on attach_screenshot
+b33474c  feat(mcp-server): attach_screenshot tool
+c79c6d4  feat(mcp-server): get_session + session resource populate real screenshots
+00d86d5  fix(widget): correct screenshot ignoreElements selectors
+0fe7f9f  feat(widget): capture + attach screenshot after feedback submit
+3a806ab  refactor(core): extract ScreenshotResponse wire type
+10a4d4c  feat(widget): attachScreenshot on ApiClient + StoreClient
+de189d1  fix(widget): log capture failure via console.warn
+e708cb1  feat(widget): captureViewportScreenshot — html2canvas lazy wrapper
+d4b4c82  feat(core): ColaborateConfig.captureScreenshots + apiKey
+facbe0a  feat(adapter-prisma): wire screenshot routes into createColaborateHandler
+2bbef24  feat(adapter-prisma): HTTP handlers for screenshot attach/list/read
+182f398  feat(adapter-prisma): PrismaStore.attachScreenshot via FsScreenshotStore
+a15c89e  fix(adapter-prisma): FsScreenshotStore — match FsSourcemapStore robustness
+ef81a12  feat(adapter-prisma): FsScreenshotStore — filesystem PNG store
+0d3a5fc  feat(adapter-localstorage): attachScreenshot + listScreenshots
+d1a83b5  feat(adapter-memory): attachScreenshot + listScreenshots
+1dfe9db  test(core): extend conformance suite with screenshot round-trip
+f0c0d98  feat(core): add attachScreenshot / listScreenshots to ColaborateStore
+3bb4fe8  chore(adapter-prisma): drop unnecessary as-any cast on gzipped body
+```
+
+## What Phase 4a shipped
+
+Sourcemap ingest + resolution backend + first widget source-capture.
+
+- **New `SourcemapStore` interface in `@colaborate/core`** — sibling of `ColaborateStore`, NOT an extension. `SourcemapPutInput`, `SourcemapRecord`, `ResolveSourceInput`, `ResolveSourceResult` plus 4 methods (`putSourcemap`, `getSourcemap`, `listSourcemaps`, `resolveSourceLocation`). Deliberately kept out of `ColaborateStore` so Memory / LocalStorage adapters don't need to stub unused methods.
+- **`FsSourcemapStore` in `@colaborate/adapter-prisma`** — filesystem-backed. Layout: `{root}/{projectName}/{env}/{hash}.map` + sibling `index.json` metadata. Idempotent on `{project, env, hash}` — re-upload refreshes filename + uploadedAt in place. 8 unit tests with `os.tmpdir()`.
+- **`resolveSource(mapContent, line, column)`** in `@colaborate/adapter-prisma` — pure primitive over `@jridgewell/trace-mapping`'s `TraceMap` + `originalPositionFor`. Fails closed: any parse error, any null source → null.
+- **`hashSourcemapContent(content)` helper** — SHA-256 hex digest of *decompressed* map body. Used as FS key + pre-upload dedup signal + upload integrity verify.
+- **Two new HTTP routes on `@colaborate/adapter-prisma`:**
+  - `POST /api/colaborate/sourcemaps` — ingest. Decompresses gzipped bodies (`node:zlib.gunzipSync`), verifies body `hash` matches SHA-256 of `content` before storing. 201 with the `SourcemapRecord` on success. Always API-key-authed when `apiKey` is set.
+  - `POST /api/colaborate/resolve-source` — resolve. Delegates to `store.resolveSourceLocation`. 200 `{sourceFile, sourceLine, sourceColumn}` on hit; 404 on miss. Same auth posture.
+- **`createColaborateHandler` options extended:** new `sourcemapStore` + `sourcemapStorePath`. The path auto-instantiates an `FsSourcemapStore`. Routes cascade: sourcemap → session → feedback with no pathname overlap.
+- **Feedback POST now threads `sourceFile / sourceLine / sourceColumn`** through the wire schema + `createFeedback` — the fields were already on `FeedbackCreateInput` from Phase 1b but previously always `undefined`.
+- **New CLI subcommand `colaborate upload-sourcemaps --project <name> --env <env> --dir <dir> --url <url>`** — fast-glob `**/*.map` under `dir`, gzip each body, POST to `/api/colaborate/sourcemaps` with Bearer auth (from `--api-key` or `COLABORATE_API_KEY`). Sequential uploads for deterministic error attribution.
+- **Widget `readDebugSource(element)`** in `packages/widget/src/dom/source.ts` — walks React's `__reactFiber$*` property, climbs the fiber `return` chain, returns `{file, line, column}` from the first populated `_debugSource` (or `null`). Works in React dev builds; silently `null` in prod or on non-React pages.
+- **Annotator + launcher integration** — both `annotation:complete` emit sites (mouse/touch + keyboard) call `readDebugSource` on the chosen anchor element and conditionally spread `source` into the event. Launcher spreads that into `FeedbackPayload.sourceFile/Line/Column`. Fails open: missing fiber metadata ⇒ fields omitted ⇒ server persists `null`.
+- **New wire fields on `FeedbackPayload`** — three optional fields mirroring the server-side `FeedbackCreateInput`. Backward compatible — existing widget POSTs without them continue to validate.
+- **Purely additive.** No changes to `packages/mcp-server` (Phase 3 surface frozen — screenshots land in Phase 4b). No changes to `@colaborate/adapter-memory` or `@colaborate/adapter-localstorage` (they don't need `SourcemapStore`). No Prisma tables added — source maps live on the filesystem.
+- **Testing:** +60 Vitest tests across 9 new test files. E2E unchanged (test pages aren't React dev builds, so `_debugSource` is always absent and the new optional wire fields stay undefined).
+- **Deferred to later phases:** widget calling the resolver endpoint in production (requires a babel plugin injecting source metadata, or event-handler stack-frame capture); screenshot ingest + `attach_screenshot` MCP tool (Phase 4b); `externalIssueUrl` write-through (Phase 6); OAuth 2.1 + PKCE (Phase 7).
+
+## Phase 4a commit trail
+
+```
+d8974f0  feat(widget): capture React _debugSource into feedback payload
+e4b6186  feat(widget): readDebugSource — fiber _debugSource walker
+80c640f  feat(core): FeedbackPayload.sourceFile / sourceLine / sourceColumn
+68b9ca6  feat(cli): colaborate upload-sourcemaps command
+3bef314  feat(adapter-prisma): wire sourcemap routes into createColaborateHandler
+cdaa76b  feat(adapter-prisma): HTTP handlers for sourcemap upload + resolve
+4fc6881  feat(adapter-prisma): Zod schemas for sourcemap routes + source fields
+7a6c9fa  feat(adapter-prisma): FsSourcemapStore — filesystem SourcemapStore
+feb9e64  feat(adapter-prisma): resolveSource helper over trace-mapping
+4d0db86  feat(adapter-prisma): hashSourcemapContent helper + trace-mapping dep
+59c0260  feat(core): add SourcemapStore interface + types
+```
 
 ## What Phase 3 shipped
 

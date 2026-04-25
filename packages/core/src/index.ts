@@ -4,6 +4,14 @@ export type { Mention, MentionKind } from "./mentions.js";
 export { EMPTY_MENTIONS, MENTION_KINDS, parseMentions, serializeMentions } from "./mentions.js";
 export type { FieldDef, IndexDef, ModelDef } from "./schema.js";
 export { COLABORATE_MODELS } from "./schema.js";
+export { DEFAULT_SCREENSHOT_MAX_BYTES } from "./screenshot-config.js";
+export type {
+  ResolveSourceInput,
+  ResolveSourceResult,
+  SourcemapPutInput,
+  SourcemapRecord,
+  SourcemapStore,
+} from "./sourcemap-store.js";
 export type {
   AnchorData,
   AnnotationCreateInput,
@@ -22,10 +30,17 @@ export type {
   FeedbackStatus,
   FeedbackType,
   FeedbackUpdateInput,
+  IssueInput,
+  IssuePatch,
+  IssueRef,
+  ScreenshotRecord,
+  ScreenshotResponse,
+  SessionBundle,
   SessionCreateInput,
   SessionRecord,
   SessionResponse,
   SessionStatus,
+  TrackerAdapter,
 } from "./types.js";
 export {
   FEEDBACK_STATUSES,
@@ -33,7 +48,9 @@ export {
   flattenAnnotation,
   isStoreDuplicate,
   isStoreNotFound,
+  isStoreValidation,
   SESSION_STATUSES,
   StoreDuplicateError,
   StoreNotFoundError,
+  StoreValidationError,
 } from "./types.js";

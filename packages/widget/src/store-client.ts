@@ -8,6 +8,7 @@ import {
   type FeedbackStatus,
   type FeedbackType,
   flattenAnnotation,
+  type ScreenshotResponse,
   type SessionRecord,
   type SessionResponse,
   type SessionStatus,
@@ -105,6 +106,17 @@ export class StoreClient implements WidgetClient {
     const records = await this.store.listSessions(projectName, status);
     return records.map(toSessionResponse);
   }
+
+  async attachScreenshot(feedbackId: string, dataUrl: string): Promise<ScreenshotResponse> {
+    const record = await this.store.attachScreenshot(feedbackId, dataUrl);
+    return {
+      id: record.id,
+      feedbackId: record.feedbackId,
+      url: record.url,
+      byteSize: record.byteSize,
+      createdAt: record.createdAt.toISOString(),
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -173,6 +185,7 @@ function toSessionResponse(record: SessionRecord): SessionResponse {
     submittedAt: record.submittedAt?.toISOString() ?? null,
     triagedAt: record.triagedAt?.toISOString() ?? null,
     notes: record.notes,
+    failureReason: record.failureReason,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   };

@@ -6,14 +6,59 @@ import {
   type FeedbackQuery,
   type FeedbackRecord,
   type FeedbackUpdateInput,
+  type ScreenshotRecord,
   type SessionCreateInput,
   type SessionRecord,
   type SessionStatus,
   StoreNotFoundError,
+  StoreValidationError,
 } from "@colaborate/core";
 
 export type { ColaborateStore } from "@colaborate/core";
-export { StoreDuplicateError, StoreNotFoundError } from "@colaborate/core";
+export { StoreDuplicateError, StoreNotFoundError, StoreValidationError } from "@colaborate/core";
+
+const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
+/** PNG file signature — first 8 bytes of every valid PNG. */
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+/**
+ * Decode `data:image/png;base64,<...>` → `{bytes, hash}`. Throws `StoreValidationError`
+ * on malformed input — the caller (HTTP handler / MCP tool) maps this to a 400-class error.
+ */
+async function decodePngDataUrl(dataUrl: string): Promise<{ bytes: Uint8Array; hash: string }> {
+  if (!dataUrl.startsWith(PNG_DATA_URL_PREFIX)) {
+    throw new StoreValidationError("Invalid dataUrl: expected 'data:image/png;base64,...'");
+  }
+  const base64 = dataUrl.slice(PNG_DATA_URL_PREFIX.length);
+  if (base64.length === 0) throw new StoreValidationError("Invalid dataUrl: empty body");
+  let bytes: Uint8Array<ArrayBuffer>;
+  try {
+    // Works in Node 18+, Bun, browsers, Workers.
+    const binary = atob(base64);
+    bytes = new Uint8Array(new ArrayBuffer(binary.length));
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  } catch (cause) {
+    throw new StoreValidationError(
+      `Invalid dataUrl: base64 decode failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+  }
+  if (!hasPngSignature(bytes)) {
+    throw new StoreValidationError("Invalid dataUrl: decoded bytes are not a PNG (missing signature)");
+  }
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const hash = Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return { bytes, hash };
+}
+
+function hasPngSignature(bytes: Uint8Array): boolean {
+  if (bytes.length < PNG_SIGNATURE.length) return false;
+  for (let i = 0; i < PNG_SIGNATURE.length; i++) {
+    if (bytes[i] !== PNG_SIGNATURE[i]) return false;
+  }
+  return true;
+}
 
 /**
  * In-memory `ColaborateStore` implementation.
@@ -37,6 +82,7 @@ export { StoreDuplicateError, StoreNotFoundError } from "@colaborate/core";
 export class MemoryStore implements ColaborateStore {
   private feedbacks: FeedbackRecord[] = [];
   private sessions: SessionRecord[] = [];
+  private screenshots: Map<string, ScreenshotRecord[]> = new Map();
   private idCounter = 1;
 
   private generateId(): string {
@@ -157,6 +203,7 @@ export class MemoryStore implements ColaborateStore {
       submittedAt: null,
       triagedAt: null,
       notes: data.notes ?? null,
+      failureReason: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -191,10 +238,79 @@ export class MemoryStore implements ColaborateStore {
     return session;
   }
 
+  async attachScreenshot(feedbackId: string, dataUrl: string): Promise<ScreenshotRecord> {
+    const { bytes, hash } = await decodePngDataUrl(dataUrl);
+    const list = this.screenshots.get(feedbackId) ?? [];
+    const now = new Date();
+    const existing = list.find((r) => r.id === hash);
+    if (existing) {
+      existing.createdAt = now;
+      return existing;
+    }
+    const record: ScreenshotRecord = {
+      id: hash,
+      feedbackId,
+      url: `/api/colaborate/feedbacks/${feedbackId}/screenshots/${hash}`,
+      byteSize: bytes.byteLength,
+      createdAt: now,
+    };
+    list.unshift(record);
+    this.screenshots.set(feedbackId, list);
+    return record;
+  }
+
+  async listScreenshots(feedbackId: string): Promise<ScreenshotRecord[]> {
+    return (this.screenshots.get(feedbackId) ?? []).slice();
+  }
+
+  async setFeedbackExternalIssue(
+    id: string,
+    data: { provider: string; issueId: string; issueUrl: string },
+  ): Promise<FeedbackRecord> {
+    const fb = this.feedbacks.find((f) => f.id === id);
+    if (!fb) throw new StoreNotFoundError();
+    fb.externalProvider = data.provider;
+    fb.externalIssueId = data.issueId;
+    fb.externalIssueUrl = data.issueUrl;
+    fb.updatedAt = new Date();
+    return fb;
+  }
+
+  async markSessionTriaged(id: string): Promise<SessionRecord> {
+    const session = this.sessions.find((s) => s.id === id);
+    if (!session) throw new StoreNotFoundError();
+    if (session.status !== "submitted" && session.status !== "failed") {
+      throw new StoreValidationError(
+        `Cannot mark session as triaged from status '${session.status}' (expected 'submitted' or 'failed')`,
+      );
+    }
+    const now = new Date();
+    session.status = "triaged";
+    session.triagedAt = now;
+    session.failureReason = null;
+    session.updatedAt = now;
+    return session;
+  }
+
+  async markSessionFailed(id: string, reason: string): Promise<SessionRecord> {
+    const session = this.sessions.find((s) => s.id === id);
+    if (!session) throw new StoreNotFoundError();
+    if (session.status !== "submitted" && session.status !== "failed") {
+      throw new StoreValidationError(
+        `Cannot mark session as failed from status '${session.status}' (expected 'submitted' or 'failed')`,
+      );
+    }
+    session.status = "failed";
+    session.failureReason = reason;
+    session.updatedAt = new Date();
+    return session;
+  }
+
   /** Remove all data from this store instance. */
   clear(): void {
     this.feedbacks = [];
     this.sessions = [];
+    this.screenshots = new Map();
     this.idCounter = 1;
   }
 }

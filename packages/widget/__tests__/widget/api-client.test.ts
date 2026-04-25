@@ -254,6 +254,83 @@ describe("ApiClient", () => {
       expect(calledUrl).toContain("projectName=test-project");
       expect(calledUrl).toContain("status=drafting");
     });
+
+    it("createSession forwards Bearer auth when apiKey is configured", async () => {
+      const authedClient = new ApiClient(endpoint, projectName, "secret");
+      fetchMock.mockResolvedValue(new Response(JSON.stringify(sessionRecord), { status: 201 }));
+      await authedClient.createSession({ projectName });
+      const init = fetchMock.mock.calls[0]![1] as RequestInit;
+      expect((init.headers as Record<string, string>).authorization).toBe("Bearer secret");
+    });
+
+    it("submitSession forwards Bearer auth when apiKey is configured", async () => {
+      const authedClient = new ApiClient(endpoint, projectName, "secret");
+      fetchMock.mockResolvedValue(
+        new Response(JSON.stringify({ ...sessionRecord, status: "submitted" }), { status: 200 }),
+      );
+      await authedClient.submitSession("sess-1");
+      const init = fetchMock.mock.calls[0]![1] as RequestInit;
+      expect((init.headers as Record<string, string>).authorization).toBe("Bearer secret");
+    });
+
+    it("getSession forwards Bearer auth when apiKey is configured", async () => {
+      const authedClient = new ApiClient(endpoint, projectName, "secret");
+      fetchMock.mockResolvedValue(new Response(JSON.stringify(sessionRecord), { status: 200 }));
+      await authedClient.getSession("sess-1");
+      const init = fetchMock.mock.calls[0]![1] as RequestInit;
+      expect((init.headers as Record<string, string>).authorization).toBe("Bearer secret");
+    });
+
+    it("listSessions forwards Bearer auth when apiKey is configured", async () => {
+      const authedClient = new ApiClient(endpoint, projectName, "secret");
+      fetchMock.mockResolvedValue(new Response(JSON.stringify([sessionRecord]), { status: 200 }));
+      await authedClient.listSessions("test-project");
+      const init = fetchMock.mock.calls[0]![1] as RequestInit;
+      expect((init.headers as Record<string, string>).authorization).toBe("Bearer secret");
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // attachScreenshot
+  // -----------------------------------------------------------------------
+
+  describe("ApiClient.attachScreenshot", () => {
+    beforeEach(() => vi.restoreAllMocks());
+
+    it("POSTs to /feedbacks/:id/screenshots with Bearer auth and returns the parsed body", async () => {
+      const mockResponse = { id: "abc", feedbackId: "fb-1", url: "/x", byteSize: 10, createdAt: "2026-04-21" };
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(JSON.stringify(mockResponse), { status: 201 }));
+      const client = new ApiClient("/api", "demo", "secret");
+      const result = await client.attachScreenshot("fb-1", "data:image/png;base64,AAA");
+      expect(result).toEqual(mockResponse);
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe("/api/feedbacks/fb-1/screenshots");
+      expect((init.headers as Record<string, string>).authorization).toBe("Bearer secret");
+    });
+
+    it("omits Authorization when no apiKey", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify({ id: "x", feedbackId: "fb", url: "/x", byteSize: 1, createdAt: "" }), {
+          status: 201,
+        }),
+      );
+      const client = new ApiClient("/api", "demo");
+      await client.attachScreenshot("fb-1", "data:image/png;base64,AAA");
+      const init = (vi.mocked(fetch).mock.calls[0] as [string, RequestInit])[1];
+      expect((init.headers as Record<string, string>).authorization).toBeUndefined();
+    });
+
+    it("throws when the server returns non-2xx", async () => {
+      // Use 401 (4xx) instead of 500 — resilientFetch retries 5xx with
+      // exponential backoff (1s + 2s + 4s), which exceeds vitest's 5s default timeout.
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("nope", { status: 401 }));
+      const client = new ApiClient("/api", "demo", "secret");
+      await expect(client.attachScreenshot("fb-1", "data:image/png;base64,AAA")).rejects.toThrow(
+        /Failed to attach screenshot: 401/,
+      );
+    });
   });
 });
 

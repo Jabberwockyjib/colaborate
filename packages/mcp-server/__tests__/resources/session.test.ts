@@ -32,6 +32,22 @@ describe("colaborate://session/{id} resource", () => {
     expect(bundle.screenshots).toEqual([]);
   });
 
+  it("populates screenshots from linked feedback records", async () => {
+    const linkedFeedback = await store.findByClientId(seed.feedbackClientIds.draftInDrafting);
+    expect(linkedFeedback).toBeDefined();
+    await store.attachScreenshot(
+      linkedFeedback!.id,
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+    );
+    const uri = new URL(uriFor(seed.draftingSession.id));
+    const result = await handle(uri, { id: seed.draftingSession.id }, { store });
+    const parsed = JSON.parse(result.contents[0]!.text as string) as {
+      screenshots: Array<{ feedbackId: string }>;
+    };
+    expect(parsed.screenshots).toHaveLength(1);
+    expect(parsed.screenshots[0]?.feedbackId).toBe(linkedFeedback!.id);
+  });
+
   it("throws when the session id is unknown (resource handlers signal errors by throwing)", async () => {
     const uri = new URL(uriFor("missing"));
     await expect(handle(uri, { id: "missing" }, { store })).rejects.toThrow(/not found/i);

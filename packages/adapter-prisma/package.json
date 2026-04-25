@@ -51,13 +51,22 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@jridgewell/trace-mapping": "^0.3.25",
     "zod": "^3.24.0"
   },
   "devDependencies": {
     "@colaborate/adapter-memory": "workspace:*",
-    "@colaborate/core": "workspace:*"
+    "@colaborate/core": "workspace:*",
+    "@colaborate/triage": "workspace:*"
   },
   "peerDependencies": {
+    "@colaborate/core": "workspace:*",
+    "@colaborate/triage": "workspace:*",
     "@prisma/client": "^5.0.0 || ^6.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@colaborate/triage": {
+      "optional": true
+    }
   }
 }

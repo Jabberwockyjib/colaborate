@@ -30,11 +30,12 @@ describe("createColaborateMcpServer — end-to-end via InMemoryTransport", () =>
     expect(info?.name).toBe("colaborate");
   });
 
-  it("lists all 6 tools", async () => {
+  it("lists all 7 tools", async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
       [
+        "attach_screenshot",
         "get_component_feedback",
         "get_session",
         "list_feedback",
@@ -77,5 +78,32 @@ describe("createColaborateMcpServer — end-to-end via InMemoryTransport", () =>
     expect(result.messages).toHaveLength(1);
     const text = (result.messages[0]!.content as { text: string }).text;
     expect(text).toContain(seed.submittedSession.id);
+  });
+
+  it("round-trips attach_screenshot and surfaces it in the session bundle", async () => {
+    // 1×1 transparent PNG (~68 decoded bytes) — smallest valid payload.
+    const PNG_DATA_URL =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+    // Recover the draftInDrafting feedback id from the store — it is linked to the drafting session.
+    const draftFb = await store.findByClientId(seed.feedbackClientIds.draftInDrafting);
+    expect(draftFb).not.toBeNull();
+
+    const attachResult = await client.callTool({
+      name: "attach_screenshot",
+      arguments: {
+        feedbackId: draftFb!.id,
+        dataUrl: PNG_DATA_URL,
+      },
+    });
+    expect(attachResult.isError).not.toBe(true);
+
+    // Re-read the session resource and confirm the screenshot now rides along in the bundle.
+    const afterAttach = await client.readResource({ uri: sessionUri(seed.draftingSession.id) });
+    const bundle = JSON.parse(afterAttach.contents[0]!.text as string) as {
+      screenshots: Array<{ feedbackId: string; id: string }>;
+    };
+    expect(bundle.screenshots.length).toBeGreaterThanOrEqual(1);
+    expect(bundle.screenshots[0]?.feedbackId).toBe(draftFb!.id);
   });
 });

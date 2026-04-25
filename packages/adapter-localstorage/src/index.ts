@@ -6,23 +6,80 @@ import {
   type FeedbackQuery,
   type FeedbackRecord,
   type FeedbackUpdateInput,
+  type ScreenshotRecord,
   type SessionCreateInput,
   type SessionRecord,
   type SessionStatus,
   StoreNotFoundError,
+  StoreValidationError,
 } from "@colaborate/core";
 
 export type { ColaborateStore } from "@colaborate/core";
-export { StoreDuplicateError, StoreNotFoundError } from "@colaborate/core";
+export { StoreDuplicateError, StoreNotFoundError, StoreValidationError } from "@colaborate/core";
 
 const DEFAULT_KEY = "colaborate_feedbacks";
 const DEFAULT_SESSIONS_KEY = "colaborate_sessions";
+const DEFAULT_SCREENSHOTS_KEY = "colaborate_screenshots";
 
 export interface LocalStorageStoreOptions {
   /** localStorage key prefix for feedbacks — defaults to `'colaborate_feedbacks'` */
   key?: string;
   /** localStorage key prefix for sessions — defaults to `'colaborate_sessions'` */
   sessionsKey?: string;
+  /** localStorage key prefix for screenshot metadata — defaults to `'colaborate_screenshots'` */
+  screenshotsKey?: string;
+}
+
+const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
+/** PNG file signature — first 8 bytes of every valid PNG. */
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+/**
+ * Decode a PNG data URL to raw bytes + hex SHA-256. Throws `StoreValidationError`
+ * on malformed input — the caller (HTTP handler / MCP tool) maps this to a 400-class error.
+ *
+ * Note: this helper is duplicated between `@colaborate/adapter-memory` and this
+ * adapter. We intentionally do NOT promote it to `@colaborate/core` yet — only
+ * two callers, and Prisma uses a synchronous Node `Buffer.from(...)` path. Revisit
+ * if a third caller appears.
+ *
+ * TS typing: `Uint8Array<ArrayBuffer>` (not `Uint8Array`) satisfies TS 5.7+'s
+ * `BufferSource` parameter on `crypto.subtle.digest` — the strict-mode default of
+ * `Uint8Array<ArrayBufferLike>` is rejected because it could be backed by a
+ * `SharedArrayBuffer`. Narrowing fixes compilation without changing behavior.
+ */
+async function decodePngDataUrl(dataUrl: string): Promise<{ bytes: Uint8Array; hash: string }> {
+  if (!dataUrl.startsWith(PNG_DATA_URL_PREFIX)) {
+    throw new StoreValidationError("Invalid dataUrl: expected 'data:image/png;base64,...'");
+  }
+  const base64 = dataUrl.slice(PNG_DATA_URL_PREFIX.length);
+  if (base64.length === 0) throw new StoreValidationError("Invalid dataUrl: empty body");
+  let bytes: Uint8Array<ArrayBuffer>;
+  try {
+    const binary = atob(base64);
+    bytes = new Uint8Array(new ArrayBuffer(binary.length));
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  } catch (cause) {
+    throw new StoreValidationError(
+      `Invalid dataUrl: base64 decode failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+  }
+  if (!hasPngSignature(bytes)) {
+    throw new StoreValidationError("Invalid dataUrl: decoded bytes are not a PNG (missing signature)");
+  }
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const hash = Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return { bytes, hash };
+}
+
+function hasPngSignature(bytes: Uint8Array): boolean {
+  if (bytes.length < PNG_SIGNATURE.length) return false;
+  for (let i = 0; i < PNG_SIGNATURE.length; i++) {
+    if (bytes[i] !== PNG_SIGNATURE[i]) return false;
+  }
+  return true;
 }
 
 /**
@@ -47,10 +104,12 @@ export interface LocalStorageStoreOptions {
 export class LocalStorageStore implements ColaborateStore {
   private readonly key: string;
   private readonly sessionsKey: string;
+  private readonly screenshotsKey: string;
 
   constructor(options?: LocalStorageStoreOptions) {
     this.key = options?.key ?? DEFAULT_KEY;
     this.sessionsKey = options?.sessionsKey ?? DEFAULT_SESSIONS_KEY;
+    this.screenshotsKey = options?.screenshotsKey ?? DEFAULT_SCREENSHOTS_KEY;
   }
 
   // ---------------------------------------------------------------------------
@@ -92,6 +151,32 @@ export class LocalStorageStore implements ColaborateStore {
       localStorage.setItem(this.sessionsKey, JSON.stringify(sessions));
     } catch {
       // localStorage full — silently drop (best-effort persistence)
+    }
+  }
+
+  private loadScreenshots(): Record<string, ScreenshotRecord[]> {
+    try {
+      const raw = localStorage.getItem(this.screenshotsKey);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw) as Record<
+        string,
+        Array<Omit<ScreenshotRecord, "createdAt"> & { createdAt: string }>
+      >;
+      const out: Record<string, ScreenshotRecord[]> = {};
+      for (const [k, v] of Object.entries(parsed)) {
+        out[k] = v.map((r) => ({ ...r, createdAt: new Date(r.createdAt) }));
+      }
+      return out;
+    } catch {
+      return {};
+    }
+  }
+
+  private saveScreenshots(map: Record<string, ScreenshotRecord[]>): void {
+    try {
+      localStorage.setItem(this.screenshotsKey, JSON.stringify(map));
+    } catch {
+      // localStorage full — silently drop
     }
   }
 
@@ -231,6 +316,7 @@ export class LocalStorageStore implements ColaborateStore {
       submittedAt: null,
       triagedAt: null,
       notes: data.notes ?? null,
+      failureReason: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -275,10 +361,104 @@ export class LocalStorageStore implements ColaborateStore {
     return session;
   }
 
+  async attachScreenshot(feedbackId: string, dataUrl: string): Promise<ScreenshotRecord> {
+    const { bytes, hash } = await decodePngDataUrl(dataUrl);
+    const map = this.loadScreenshots();
+    const list = map[feedbackId] ?? [];
+    const now = new Date();
+    const existing = list.find((r) => r.id === hash);
+    if (existing) {
+      existing.createdAt = now;
+      map[feedbackId] = list;
+      this.saveScreenshots(map);
+      return existing;
+    }
+    const record: ScreenshotRecord = {
+      id: hash,
+      feedbackId,
+      url: `/api/colaborate/feedbacks/${feedbackId}/screenshots/${hash}`,
+      byteSize: bytes.byteLength,
+      createdAt: now,
+    };
+    list.unshift(record);
+    map[feedbackId] = list;
+    this.saveScreenshots(map);
+    return record;
+  }
+
+  async listScreenshots(feedbackId: string): Promise<ScreenshotRecord[]> {
+    const map = this.loadScreenshots();
+    return map[feedbackId]?.slice() ?? [];
+  }
+
+  async setFeedbackExternalIssue(
+    id: string,
+    data: { provider: string; issueId: string; issueUrl: string },
+  ): Promise<FeedbackRecord> {
+    const feedbacks = this.load();
+    const idx = feedbacks.findIndex((f) => f.id === id);
+    if (idx === -1) throw new StoreNotFoundError();
+    const updated: FeedbackRecord = {
+      ...(feedbacks[idx] as FeedbackRecord),
+      externalProvider: data.provider,
+      externalIssueId: data.issueId,
+      externalIssueUrl: data.issueUrl,
+      updatedAt: new Date(),
+    };
+    feedbacks[idx] = updated;
+    this.save(feedbacks);
+    return updated;
+  }
+
+  async markSessionTriaged(id: string): Promise<SessionRecord> {
+    const sessions = this.loadSessions();
+    const idx = sessions.findIndex((s) => s.id === id);
+    if (idx === -1) throw new StoreNotFoundError();
+    const session = sessions[idx] as SessionRecord;
+    if (session.status !== "submitted" && session.status !== "failed") {
+      throw new StoreValidationError(
+        `Cannot mark session as triaged from status '${session.status}' (expected 'submitted' or 'failed')`,
+      );
+    }
+    const now = new Date();
+    const updated: SessionRecord = {
+      ...session,
+      status: "triaged",
+      triagedAt: now,
+      failureReason: null,
+      updatedAt: now,
+    };
+    sessions[idx] = updated;
+    this.saveSessions(sessions);
+    return updated;
+  }
+
+  async markSessionFailed(id: string, reason: string): Promise<SessionRecord> {
+    const sessions = this.loadSessions();
+    const idx = sessions.findIndex((s) => s.id === id);
+    if (idx === -1) throw new StoreNotFoundError();
+    const session = sessions[idx] as SessionRecord;
+    if (session.status !== "submitted" && session.status !== "failed") {
+      throw new StoreValidationError(
+        `Cannot mark session as failed from status '${session.status}' (expected 'submitted' or 'failed')`,
+      );
+    }
+    const updated: SessionRecord = {
+      ...session,
+      status: "failed",
+      failureReason: reason,
+      updatedAt: new Date(),
+    };
+    sessions[idx] = updated;
+    this.saveSessions(sessions);
+    return updated;
+  }
+
   /** Remove all data from localStorage for this store's keys. */
   clear(): void {
     localStorage.removeItem(this.key);
     localStorage.removeItem(this.sessionsKey);
+    localStorage.removeItem(this.screenshotsKey);
   }
 }
 

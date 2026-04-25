@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import {
   type ColaborateStore,
+  DEFAULT_SCREENSHOT_MAX_BYTES,
   type FeedbackCreateInput,
   type FeedbackQuery,
   type FeedbackRecord,
@@ -8,28 +9,63 @@ import {
   flattenAnnotation,
   isStoreDuplicate,
   isStoreNotFound,
+  type ScreenshotRecord,
   type SessionCreateInput,
   type SessionRecord,
   type SessionStatus,
+  StoreNotFoundError,
+  StoreValidationError,
   serializeMentions,
 } from "@colaborate/core";
+import { FsScreenshotStore } from "./fs-screenshot-store.js";
+import { FsSourcemapStore } from "./fs-sourcemap-store.js";
+import {
+  handleAttachScreenshot,
+  handleListScreenshots,
+  handleReadScreenshot,
+  matchScreenshotRoute,
+} from "./routes-screenshots.js";
 import {
   handleCreateSession,
   handleGetSession,
   handleListSessions,
   handleSubmitSession,
+  handleTriageSession,
   matchSessionRoute,
 } from "./routes-sessions.js";
+import { handleResolveSource, handleUploadSourcemap, matchSourcemapRoute } from "./routes-sourcemaps.js";
 import {
   feedbackCreateSchema,
   feedbackDeleteSchema,
   feedbackPatchSchema,
   formatValidationErrors,
   getQuerySchema,
+  makeScreenshotAttachSchema,
 } from "./validation.js";
 
-export type { ColaborateStore } from "@colaborate/core";
-export { flattenAnnotation, StoreDuplicateError, StoreNotFoundError, serializeMentions } from "@colaborate/core";
+export type {
+  ColaborateStore,
+  ResolveSourceInput,
+  ResolveSourceResult,
+  ScreenshotRecord,
+  SourcemapPutInput,
+  SourcemapRecord,
+  SourcemapStore,
+} from "@colaborate/core";
+export {
+  DEFAULT_SCREENSHOT_MAX_BYTES,
+  flattenAnnotation,
+  isStoreValidation,
+  StoreDuplicateError,
+  StoreNotFoundError,
+  StoreValidationError,
+  serializeMentions,
+} from "@colaborate/core";
+export { FsScreenshotStore } from "./fs-screenshot-store.js";
+export { FsSourcemapStore } from "./fs-sourcemap-store.js";
+export { hashPngBytes } from "./screenshot-hash.js";
+export { hashSourcemapContent } from "./sourcemap-hash.js";
+export { resolveSource } from "./sourcemap-resolver.js";
 export type {
   FeedbackCreateInput as FeedbackCreateSchemaInput,
   FeedbackDeleteInput,
@@ -73,6 +109,46 @@ export interface ColaboratePrismaClient {
 
 const INCLUDE_ANNOTATIONS = { annotations: true };
 
+const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
+/** PNG file signature — first 8 bytes of every valid PNG. */
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/**
+ * Decode a PNG data URL to a Node Buffer. Synchronous — uses Node's native
+ * base64 decoder. Throws `StoreValidationError` on malformed input — the calling
+ * HTTP handler / MCP tool maps that to a 400-class error.
+ *
+ * Note: `Buffer.from(base64, "base64")` does NOT throw on malformed base64; it
+ * silently returns garbage bytes. We therefore validate the decoded payload
+ * starts with the PNG signature as the actual gate.
+ *
+ * Note: this is the sync Node-Buffer equivalent of the async `decodePngDataUrl`
+ * duplicated in `@colaborate/adapter-memory` and `@colaborate/adapter-localstorage`.
+ * Those use `atob` + `crypto.subtle.digest` to work in browser/Worker environments
+ * where Node's `Buffer` isn't available. We deliberately do NOT share a helper —
+ * the sync Node path here is simpler, ~30% faster, and avoids pulling Web Crypto
+ * into the server bundle.
+ */
+function decodePngDataUrl(dataUrl: string): Buffer {
+  if (!dataUrl.startsWith(PNG_DATA_URL_PREFIX)) {
+    throw new StoreValidationError("Invalid dataUrl: expected 'data:image/png;base64,...'");
+  }
+  const base64 = dataUrl.slice(PNG_DATA_URL_PREFIX.length);
+  if (base64.length === 0) throw new StoreValidationError("Invalid dataUrl: empty body");
+  let bytes: Buffer;
+  try {
+    bytes = Buffer.from(base64, "base64");
+  } catch (cause) {
+    throw new StoreValidationError(
+      `Invalid dataUrl: base64 decode failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+  }
+  if (bytes.length < PNG_SIGNATURE.length || !bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+    throw new StoreValidationError("Invalid dataUrl: decoded bytes are not a PNG (missing signature)");
+  }
+  return bytes;
+}
+
 /**
  * Prisma-backed implementation of `ColaborateStore`.
  *
@@ -81,9 +157,12 @@ const INCLUDE_ANNOTATIONS = { annotations: true };
 export class PrismaStore implements ColaborateStore {
   /** @internal */
   private prisma: ColaboratePrismaClient;
+  /** @internal */
+  private screenshotStore: FsScreenshotStore | null;
 
-  constructor(prisma: ColaboratePrismaClient) {
+  constructor(prisma: ColaboratePrismaClient, screenshotStore?: FsScreenshotStore) {
     this.prisma = prisma;
+    this.screenshotStore = screenshotStore ?? null;
   }
 
   async createFeedback(data: FeedbackCreateInput): Promise<FeedbackRecord> {
@@ -234,6 +313,69 @@ export class PrismaStore implements ColaborateStore {
     ]);
     return updatedSession as SessionRecord;
   }
+
+  async attachScreenshot(feedbackId: string, dataUrl: string): Promise<ScreenshotRecord> {
+    if (!this.screenshotStore) {
+      throw new Error(
+        "[colaborate] PrismaStore.attachScreenshot: no FsScreenshotStore configured. Pass `screenshotStore` to createColaborateHandler or the PrismaStore constructor.",
+      );
+    }
+    const bytes = decodePngDataUrl(dataUrl);
+    return this.screenshotStore.putScreenshot(feedbackId, bytes);
+  }
+
+  async listScreenshots(feedbackId: string): Promise<ScreenshotRecord[]> {
+    if (!this.screenshotStore) return [];
+    return this.screenshotStore.listScreenshots(feedbackId);
+  }
+
+  async setFeedbackExternalIssue(
+    id: string,
+    data: { provider: string; issueId: string; issueUrl: string },
+  ): Promise<FeedbackRecord> {
+    try {
+      return (await this.prisma.colaborateFeedback.update({
+        where: { id },
+        data: {
+          externalProvider: data.provider,
+          externalIssueId: data.issueId,
+          externalIssueUrl: data.issueUrl,
+        },
+        include: INCLUDE_ANNOTATIONS,
+      })) as FeedbackRecord;
+    } catch (error) {
+      if (isStoreNotFound(error)) throw new StoreNotFoundError();
+      throw error;
+    }
+  }
+
+  async markSessionTriaged(id: string): Promise<SessionRecord> {
+    const current = (await this.prisma.colaborateSession.findUnique({ where: { id } })) as { status: string } | null;
+    if (!current) throw new StoreNotFoundError();
+    if (current.status !== "submitted" && current.status !== "failed") {
+      throw new StoreValidationError(
+        `Cannot mark session as triaged from status '${current.status}' (expected 'submitted' or 'failed')`,
+      );
+    }
+    return (await this.prisma.colaborateSession.update({
+      where: { id },
+      data: { status: "triaged", triagedAt: new Date(), failureReason: null },
+    })) as SessionRecord;
+  }
+
+  async markSessionFailed(id: string, reason: string): Promise<SessionRecord> {
+    const current = (await this.prisma.colaborateSession.findUnique({ where: { id } })) as { status: string } | null;
+    if (!current) throw new StoreNotFoundError();
+    if (current.status !== "submitted" && current.status !== "failed") {
+      throw new StoreValidationError(
+        `Cannot mark session as failed from status '${current.status}' (expected 'submitted' or 'failed')`,
+      );
+    }
+    return (await this.prisma.colaborateSession.update({
+      where: { id },
+      data: { status: "failed", failureReason: reason },
+    })) as SessionRecord;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -264,6 +406,43 @@ export interface HandlerOptions {
   publicEndpoints?: Array<"GET" | "POST" | "PATCH" | "DELETE" | "OPTIONS">;
   /** Allowed CORS origins — when set, validates the Origin header */
   allowedOrigins?: string[] | undefined;
+  /**
+   * Optional `SourcemapStore` for the sourcemap upload + resolve routes. When
+   * omitted but `sourcemapStorePath` is set, an FsSourcemapStore is auto-instantiated.
+   * When both are unset, sourcemap routes return 500 on call.
+   */
+  sourcemapStore?: import("@colaborate/core").SourcemapStore | undefined;
+  /** Filesystem root for the default `FsSourcemapStore`. Ignored when `sourcemapStore` is set. */
+  sourcemapStorePath?: string | undefined;
+  /**
+   * Optional `FsScreenshotStore` for the screenshot attach + list + read routes.
+   * When omitted but `screenshotStorePath` is set, one is auto-instantiated.
+   * When both are unset AND `store` is not provided, an ad-hoc `PrismaStore` is
+   * constructed without screenshot support — attachScreenshot throws, listScreenshots returns [].
+   */
+  screenshotStore?: FsScreenshotStore | undefined;
+  /** Filesystem root for the default `FsScreenshotStore`. Ignored when `screenshotStore` is set. */
+  screenshotStorePath?: string | undefined;
+  /**
+   * Override the maximum byte length of inbound screenshot dataUrls (measured on the
+   * base64 portion). Defaults to `DEFAULT_SCREENSHOT_MAX_BYTES` (14 MiB ≈ 10 MiB
+   * decoded). Reduce in proxy-constrained environments; increase if you need higher
+   * fidelity captures and have the bandwidth.
+   */
+  screenshotMaxBytes?: number | undefined;
+  /**
+   * Optional triage worker. When provided, the manual retry route
+   * `POST /api/colaborate/sessions/:id/triage` becomes available.
+   */
+  triage?:
+    | { triageSession(id: string): Promise<{ status: "triaged" | "failed"; failureReason: string | null }> }
+    | undefined;
+  /**
+   * Optional event bus. When provided, `handleSubmitSession` emits
+   * `session.submitted` after the status flip — wire a `TriageWorker` to
+   * the same bus to get fire-and-forget triage on submit.
+   */
+  eventBus?: { emit(event: "session.submitted", payload: { sessionId: string }): void } | undefined;
 }
 
 /**
@@ -362,13 +541,29 @@ export function createColaborateHandler({
   apiKey,
   publicEndpoints = apiKey ? ["POST", "OPTIONS"] : undefined,
   allowedOrigins,
+  sourcemapStore: providedSourcemapStore,
+  sourcemapStorePath,
+  screenshotStore: providedScreenshotStore,
+  screenshotStorePath,
+  screenshotMaxBytes = DEFAULT_SCREENSHOT_MAX_BYTES,
+  triage,
+  eventBus,
 }: HandlerOptions): ColaborateHandler {
   if (!providedStore && !prisma) {
     throw new Error("[colaborate] createColaborateHandler requires either `store` or `prisma`.");
   }
 
+  const screenshotStore: FsScreenshotStore | null =
+    providedScreenshotStore ?? (screenshotStorePath ? new FsScreenshotStore({ root: screenshotStorePath }) : null);
+
   // Safe: the throw above guarantees at least one is defined
-  const store: ColaborateStore = providedStore ?? new PrismaStore(prisma as NonNullable<typeof prisma>);
+  const store: ColaborateStore =
+    providedStore ?? new PrismaStore(prisma as NonNullable<typeof prisma>, screenshotStore ?? undefined);
+
+  const sourcemapStore: import("@colaborate/core").SourcemapStore | null =
+    providedSourcemapStore ?? (sourcemapStorePath ? new FsSourcemapStore({ root: sourcemapStorePath }) : null);
+
+  const screenshotAttachSchemaForCap = makeScreenshotAttachSchema(screenshotMaxBytes);
 
   const publicMethods = publicEndpoints ? new Set(publicEndpoints) : null;
 
@@ -406,6 +601,40 @@ export function createColaborateHandler({
     POST: async (request: Request): Promise<Response> => {
       const corsHeaders = buildCorsHeaders(request, allowedOrigins);
       const pathname = new URL(request.url).pathname;
+
+      const sourcemapRoute = matchSourcemapRoute(pathname, "POST");
+      if (sourcemapRoute) {
+        const authError = authenticate(request, "POST", true);
+        if (authError) return withCors(authError, corsHeaders);
+        if (!sourcemapStore) {
+          return withCors(Response.json({ error: "Sourcemap store not configured" }, { status: 500 }), corsHeaders);
+        }
+        try {
+          if (sourcemapRoute.kind === "upload") {
+            return withCors(await handleUploadSourcemap(request, sourcemapStore), corsHeaders);
+          }
+          return withCors(await handleResolveSource(request, sourcemapStore), corsHeaders);
+        } catch (error) {
+          console.error("[colaborate] Sourcemap route error:", error);
+          return withCors(Response.json({ error: "Internal server error" }, { status: 500 }), corsHeaders);
+        }
+      }
+
+      const screenshotRoute = matchScreenshotRoute(pathname, "POST");
+      if (screenshotRoute && screenshotRoute.kind === "attach") {
+        const authError = authenticate(request, "POST", true);
+        if (authError) return withCors(authError, corsHeaders);
+        try {
+          return withCors(
+            await handleAttachScreenshot(request, store, screenshotRoute.feedbackId, screenshotAttachSchemaForCap),
+            corsHeaders,
+          );
+        } catch (error) {
+          console.error("[colaborate] Screenshot attach error:", error);
+          return withCors(Response.json({ error: "Internal server error" }, { status: 500 }), corsHeaders);
+        }
+      }
+
       const sessionRoute = matchSessionRoute(pathname, "POST");
       if (sessionRoute) {
         const authError = authenticate(request, "POST", true);
@@ -415,7 +644,10 @@ export function createColaborateHandler({
             return withCors(await handleCreateSession(request, store), corsHeaders);
           }
           if (sessionRoute.kind === "submit") {
-            return withCors(await handleSubmitSession(store, sessionRoute.id), corsHeaders);
+            return withCors(await handleSubmitSession(store, sessionRoute.id, eventBus), corsHeaders);
+          }
+          if (sessionRoute.kind === "triage") {
+            return withCors(await handleTriageSession(store, sessionRoute.id, triage ?? null), corsHeaders);
           }
           // Defensive — matchSessionRoute couples kind to method; this can't happen
           // in normal flow but we refuse to fall through to feedback-POST handling.
@@ -458,6 +690,9 @@ export function createColaborateHandler({
           clientId: data.clientId,
           sessionId: data.sessionId,
           componentId: data.componentId,
+          sourceFile: data.sourceFile,
+          sourceLine: data.sourceLine,
+          sourceColumn: data.sourceColumn,
           mentions: serializeMentions(data.mentions),
           annotations: data.annotations.map(flattenAnnotation),
         });
@@ -495,6 +730,33 @@ export function createColaborateHandler({
           return withCors(Response.json({ error: "Method not allowed" }, { status: 405 }), corsHeaders);
         } catch (error) {
           console.error("[colaborate] Session route error:", error);
+          return withCors(Response.json({ error: "Internal server error" }, { status: 500 }), corsHeaders);
+        }
+      }
+
+      const screenshotRouteGet = matchScreenshotRoute(pathname, "GET");
+      if (screenshotRouteGet) {
+        const authError = authenticate(request, "GET", true);
+        if (authError) return withCors(authError, corsHeaders);
+        try {
+          if (screenshotRouteGet.kind === "list") {
+            return withCors(await handleListScreenshots(store, screenshotRouteGet.feedbackId), corsHeaders);
+          }
+          if (screenshotRouteGet.kind === "read") {
+            if (!screenshotStore) {
+              return withCors(
+                Response.json({ error: "Screenshot store not configured" }, { status: 500 }),
+                corsHeaders,
+              );
+            }
+            return withCors(
+              await handleReadScreenshot(screenshotStore, screenshotRouteGet.feedbackId, screenshotRouteGet.hash),
+              corsHeaders,
+            );
+          }
+          return withCors(Response.json({ error: "Method not allowed" }, { status: 405 }), corsHeaders);
+        } catch (error) {
+          console.error("[colaborate] Screenshot GET error:", error);
           return withCors(Response.json({ error: "Internal server error" }, { status: 500 }), corsHeaders);
         }
       }

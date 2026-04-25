@@ -13,6 +13,13 @@ mockMatchMedia(false);
 
 const mockSendFeedback = vi.fn<[], Promise<FeedbackResponse>>();
 const mockGetFeedbacks = vi.fn().mockResolvedValue({ feedbacks: [], total: 0 });
+const mockAttachScreenshot = vi.fn().mockResolvedValue({
+  id: "ss-1",
+  feedbackId: "fb-new-1",
+  url: "/x",
+  byteSize: 10,
+  createdAt: "2026-04-21T00:00:00Z",
+});
 
 vi.mock(new URL("../../src/api-client.js", import.meta.url).pathname, () => ({
   ApiClient: vi.fn().mockImplementation(() => ({
@@ -25,8 +32,16 @@ vi.mock(new URL("../../src/api-client.js", import.meta.url).pathname, () => ({
     submitSession: vi.fn(),
     getSession: vi.fn().mockResolvedValue(null),
     listSessions: vi.fn().mockResolvedValue([]),
+    attachScreenshot: mockAttachScreenshot,
   })),
   flushRetryQueue: vi.fn().mockResolvedValue(undefined),
+}));
+
+// Mock the screenshot module to avoid exercising html2canvas in jsdom
+const mockCaptureViewportScreenshot = vi.fn().mockResolvedValue("data:image/png;base64,MOCK");
+
+vi.mock(new URL("../../src/screenshot.js", import.meta.url).pathname, () => ({
+  captureViewportScreenshot: (...args: unknown[]) => mockCaptureViewportScreenshot(...args),
 }));
 
 // Capture the EventBus instance that launch() creates so we can emit events on it.
@@ -163,6 +178,14 @@ describe("launcher — annotation:complete integration", () => {
     capturedBus = null;
     vi.clearAllMocks();
     mockGetIdentity.mockReturnValue({ name: "Test User", email: "test@example.com" });
+    mockCaptureViewportScreenshot.mockResolvedValue("data:image/png;base64,MOCK");
+    mockAttachScreenshot.mockResolvedValue({
+      id: "ss-1",
+      feedbackId: "fb-new-1",
+      url: "/x",
+      byteSize: 10,
+      createdAt: "2026-04-21T00:00:00Z",
+    });
     // Clear per-project session-state keys so next test's hydrate() doesn't fire getSession
     localStorage.clear();
   });
@@ -427,6 +450,79 @@ describe("launcher — annotation:complete integration", () => {
       await vi.waitFor(() => {
         expect(onError).toHaveBeenCalledWith(error);
       });
+
+      instance.destroy();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // captureScreenshots
+  // -------------------------------------------------------------------------
+
+  describe("captureScreenshots", () => {
+    it("does not call attachScreenshot when captureScreenshots is false (default)", async () => {
+      const response = makeFeedbackResponse({ id: "fb-noshot-1" });
+      mockSendFeedback.mockResolvedValue(response);
+
+      const instance = launch(defaultConfig());
+      expect(capturedBus).not.toBeNull();
+
+      capturedBus!.emit("annotation:complete", makeAnnotationCompleteData());
+
+      await vi.waitFor(() => {
+        expect(mockSendFeedback).toHaveBeenCalledOnce();
+      });
+
+      // Allow any detached async block to settle
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(mockCaptureViewportScreenshot).not.toHaveBeenCalled();
+      expect(mockAttachScreenshot).not.toHaveBeenCalled();
+
+      instance.destroy();
+    });
+
+    it("calls attachScreenshot with feedbackId + dataUrl when captureScreenshots is true", async () => {
+      const response = makeFeedbackResponse({ id: "fb-shot-1" });
+      mockSendFeedback.mockResolvedValue(response);
+
+      const instance = launch(defaultConfig({ captureScreenshots: true }));
+      expect(capturedBus).not.toBeNull();
+
+      capturedBus!.emit("annotation:complete", makeAnnotationCompleteData());
+
+      await vi.waitFor(() => {
+        expect(mockAttachScreenshot).toHaveBeenCalledWith("fb-shot-1", "data:image/png;base64,MOCK");
+      });
+
+      // Also verify we asked the screenshot module to ignore our own DOM nodes
+      expect(mockCaptureViewportScreenshot).toHaveBeenCalledWith(["colaborate-widget", "#colaborate-markers"]);
+
+      instance.destroy();
+    });
+
+    it("does not throw when attachScreenshot rejects — user-facing flow still completes", async () => {
+      const response = makeFeedbackResponse({ id: "fb-failshot-1" });
+      mockSendFeedback.mockResolvedValue(response);
+      mockAttachScreenshot.mockRejectedValue(new Error("network down"));
+
+      const feedbackSentListener = vi.fn();
+      const instance = launch(defaultConfig({ captureScreenshots: true, onFeedbackSent: feedbackSentListener }));
+      expect(capturedBus).not.toBeNull();
+
+      // Emitting should not throw even though attachScreenshot rejects
+      expect(() => capturedBus!.emit("annotation:complete", makeAnnotationCompleteData())).not.toThrow();
+
+      // User-facing success path still completes: feedback:sent emitted + live region updated
+      await vi.waitFor(() => {
+        expect(feedbackSentListener).toHaveBeenCalledWith(expect.objectContaining({ id: "fb-failshot-1" }));
+        const liveRegion = document.querySelector<HTMLElement>('[role="status"][aria-live="polite"]');
+        expect(liveRegion).not.toBeNull();
+        expect(liveRegion!.textContent).not.toBe("");
+      });
+
+      // Let the detached async block settle so the rejection is observed
+      await new Promise((r) => setTimeout(r, 0));
 
       instance.destroy();
     });

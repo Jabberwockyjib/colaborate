@@ -13,6 +13,7 @@ import { createT, type TFunction } from "./i18n/index.js";
 import { getIdentity, type Identity, saveIdentity } from "./identity.js";
 import { MarkerManager } from "./markers.js";
 import { Panel } from "./panel.js";
+import { captureViewportScreenshot } from "./screenshot.js";
 import { SessionPanel } from "./session-panel.js";
 import { SessionState } from "./session-state.js";
 import { StoreClient } from "./store-client.js";
@@ -105,7 +106,7 @@ export function launch(config: ColaborateConfig): ColaborateInstance {
   // Client-side mode (store) vs HTTP mode (endpoint)
   const client: WidgetClient = config.store
     ? new StoreClient(config.store, config.projectName)
-    : new ApiClient(config.endpoint as string, config.projectName);
+    : new ApiClient(config.endpoint as string, config.projectName, config.apiKey);
 
   // Wire config callbacks to event bus
   if (config.onOpen) bus.on("open", config.onOpen);
@@ -292,12 +293,42 @@ export function launch(config: ColaborateConfig): ColaborateInstance {
         annotations: [annotation],
         clientId,
         ...(sessionId ? { sessionId, status } : {}),
+        ...(data.source
+          ? {
+              sourceFile: data.source.file,
+              sourceLine: data.source.line,
+              sourceColumn: data.source.column,
+            }
+          : {}),
       };
 
       try {
         const response = await client.sendFeedback(payload);
         bus.emit("feedback:sent", response);
         markers.addFeedback(response, markers.count + 1);
+
+        if (config.captureScreenshots) {
+          // Non-blocking, fail-open — a capture/upload error must NOT affect the
+          // user-facing success path.
+          void (async () => {
+            try {
+              const dataUrl = await captureViewportScreenshot([
+                // Colaborate-owned DOM to exclude from the screenshot. Tag name covers the
+                // custom-element host (shadow-DOM subtree). `#colaborate-markers` covers the
+                // markers container (outside shadow DOM, appended to document.body).
+                "colaborate-widget",
+                "#colaborate-markers",
+              ]);
+              if (dataUrl) {
+                await client.attachScreenshot(response.id, dataUrl);
+                log("Screenshot attached", { feedbackId: response.id, dataUrlChars: dataUrl.length });
+              }
+            } catch (err) {
+              log("Screenshot capture/attach failed (ignored)", err);
+            }
+          })();
+        }
+
         liveRegion.textContent = t("feedback.sent.confirmation");
         if (sessionMode) {
           await refreshSessionPanel();
