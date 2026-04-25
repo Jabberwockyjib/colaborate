@@ -1,0 +1,57 @@
+{
+  "name": "@colaborate/triage",
+  "version": "0.0.0",
+  "description": "LLM-driven triage worker for Colaborate — turns sessions into tracker issues",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && node ../../scripts/fix-dts.mjs dist",
+    "check": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "colaborate",
+    "triage",
+    "anthropic",
+    "claude",
+    "feedback"
+  ],
+  "author": "Develotype <bdoud@develotype.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/Jabberwockyjib/colaborate",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jabberwockyjib/colaborate.git",
+    "directory": "packages/triage"
+  },
+  "bugs": {
+    "url": "https://github.com/Jabberwockyjib/colaborate/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.40.0",
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@colaborate/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@colaborate/adapter-memory": "workspace:*",
+    "@colaborate/core": "workspace:*"
+  }
+}
