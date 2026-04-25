@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SESSION_STATUSES, COLABORATE_MODELS } from "../src/index.js";
+import { COLABORATE_MODELS, SESSION_STATUSES } from "../src/index.js";
 
 describe("Phase 5 schema additions", () => {
   it("SESSION_STATUSES includes 'failed'", () => {
@@ -7,9 +7,7 @@ describe("Phase 5 schema additions", () => {
   });
 
   it("SESSION_STATUSES retains existing values + 'failed' (no removals)", () => {
-    expect([...SESSION_STATUSES].sort()).toEqual(
-      ["archived", "drafting", "failed", "submitted", "triaged"].sort(),
-    );
+    expect([...SESSION_STATUSES].sort()).toEqual(["archived", "drafting", "failed", "submitted", "triaged"].sort());
   });
 
   it("ColaborateSession schema has optional failureReason text field", () => {
