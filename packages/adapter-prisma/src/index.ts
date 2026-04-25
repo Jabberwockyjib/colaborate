@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import {
   type ColaborateStore,
+  DEFAULT_SCREENSHOT_MAX_BYTES,
   type FeedbackCreateInput,
   type FeedbackQuery,
   type FeedbackRecord,
@@ -37,6 +38,7 @@ import {
   feedbackPatchSchema,
   formatValidationErrors,
   getQuerySchema,
+  makeScreenshotAttachSchema,
 } from "./validation.js";
 
 export type {
@@ -49,6 +51,7 @@ export type {
   SourcemapStore,
 } from "@colaborate/core";
 export {
+  DEFAULT_SCREENSHOT_MAX_BYTES,
   flattenAnnotation,
   isStoreValidation,
   StoreDuplicateError,
@@ -370,6 +373,13 @@ export interface HandlerOptions {
   screenshotStore?: FsScreenshotStore | undefined;
   /** Filesystem root for the default `FsScreenshotStore`. Ignored when `screenshotStore` is set. */
   screenshotStorePath?: string | undefined;
+  /**
+   * Override the maximum byte length of inbound screenshot dataUrls (measured on the
+   * base64 portion). Defaults to `DEFAULT_SCREENSHOT_MAX_BYTES` (14 MiB ≈ 10 MiB
+   * decoded). Reduce in proxy-constrained environments; increase if you need higher
+   * fidelity captures and have the bandwidth.
+   */
+  screenshotMaxBytes?: number | undefined;
 }
 
 /**
@@ -472,6 +482,7 @@ export function createColaborateHandler({
   sourcemapStorePath,
   screenshotStore: providedScreenshotStore,
   screenshotStorePath,
+  screenshotMaxBytes = DEFAULT_SCREENSHOT_MAX_BYTES,
 }: HandlerOptions): ColaborateHandler {
   if (!providedStore && !prisma) {
     throw new Error("[colaborate] createColaborateHandler requires either `store` or `prisma`.");
@@ -486,6 +497,8 @@ export function createColaborateHandler({
 
   const sourcemapStore: import("@colaborate/core").SourcemapStore | null =
     providedSourcemapStore ?? (sourcemapStorePath ? new FsSourcemapStore({ root: sourcemapStorePath }) : null);
+
+  const screenshotAttachSchemaForCap = makeScreenshotAttachSchema(screenshotMaxBytes);
 
   const publicMethods = publicEndpoints ? new Set(publicEndpoints) : null;
 
@@ -547,7 +560,10 @@ export function createColaborateHandler({
         const authError = authenticate(request, "POST", true);
         if (authError) return withCors(authError, corsHeaders);
         try {
-          return withCors(await handleAttachScreenshot(request, store, screenshotRoute.feedbackId), corsHeaders);
+          return withCors(
+            await handleAttachScreenshot(request, store, screenshotRoute.feedbackId, screenshotAttachSchemaForCap),
+            corsHeaders,
+          );
         } catch (error) {
           console.error("[colaborate] Screenshot attach error:", error);
           return withCors(Response.json({ error: "Internal server error" }, { status: 500 }), corsHeaders);

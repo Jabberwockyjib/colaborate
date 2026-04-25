@@ -2,6 +2,9 @@ import { type ColaborateStore, isStoreValidation } from "@colaborate/core";
 import type { FsScreenshotStore } from "./fs-screenshot-store.js";
 import { formatValidationErrors, screenshotAttachSchema } from "./validation.js";
 
+/** Type alias for the schema returned by `makeScreenshotAttachSchema` — kept loose so callers don't have to import zod. */
+type AttachSchema = typeof screenshotAttachSchema;
+
 export type ScreenshotRoute =
   | { kind: "attach"; feedbackId: string }
   | { kind: "list"; feedbackId: string }
@@ -40,11 +43,12 @@ export async function handleAttachScreenshot(
   request: Request,
   store: ColaborateStore,
   feedbackId: string,
+  schema: AttachSchema = screenshotAttachSchema,
 ): Promise<Response> {
   const body = await request.json().catch(() => null);
   if (!body) return Response.json({ error: "Invalid JSON" }, { status: 400 });
 
-  const parsed = screenshotAttachSchema.safeParse(body);
+  const parsed = schema.safeParse(body);
   if (!parsed.success) {
     return Response.json({ errors: formatValidationErrors(parsed.error) }, { status: 400 });
   }

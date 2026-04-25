@@ -4,6 +4,7 @@ export type { Mention, MentionKind } from "./mentions.js";
 export { EMPTY_MENTIONS, MENTION_KINDS, parseMentions, serializeMentions } from "./mentions.js";
 export type { FieldDef, IndexDef, ModelDef } from "./schema.js";
 export { COLABORATE_MODELS } from "./schema.js";
+export { DEFAULT_SCREENSHOT_MAX_BYTES } from "./screenshot-config.js";
 export type {
   ResolveSourceInput,
   ResolveSourceResult,

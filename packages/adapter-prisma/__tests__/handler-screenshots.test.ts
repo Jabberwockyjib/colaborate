@@ -96,4 +96,56 @@ describe("createColaborateHandler — screenshots", () => {
     );
     expect(res.status).toBe(401);
   });
+
+  it("honors a custom screenshotMaxBytes — rejects payload exceeding the configured cap", async () => {
+    // Build a PNG dataUrl whose base64 portion exceeds a small cap. We pad with
+    // valid base64 chars so the regex passes; the .max() check is what fires.
+    const tinyCap = 1024;
+    const oversizedBase64 = "A".repeat(tinyCap + 1);
+    const oversizedDataUrl = `data:image/png;base64,${oversizedBase64}`;
+
+    const store = new MemoryStore();
+    const handler = createColaborateHandler({ store, apiKey: "secret", screenshotMaxBytes: tinyCap });
+
+    const res = await handler.POST(
+      new Request("http://test/api/colaborate/feedbacks/fb-tiny/screenshots", {
+        method: "POST",
+        headers: { authorization: "Bearer secret", "content-type": "application/json" },
+        body: JSON.stringify({ dataUrl: oversizedDataUrl }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { errors?: Array<{ field: string; message: string }> };
+    expect(body.errors?.some((e) => e.field === "dataUrl" && /cap/i.test(e.message))).toBe(true);
+  });
+
+  it("default screenshotMaxBytes still accepts payloads under the 14 MiB cap", async () => {
+    // Sanity: omitting the option preserves the historical behavior — a normal
+    // 1x1 PNG dataUrl is well under any reasonable cap and must be accepted.
+    const store = new MemoryStore();
+    const handler = createColaborateHandler({ store, apiKey: "secret" });
+    const fb = await store.createFeedback({
+      projectName: "demo",
+      type: "bug",
+      message: "hi",
+      status: "open",
+      url: "https://example.com",
+      viewport: "1024x768",
+      userAgent: "vitest",
+      authorName: "x",
+      authorEmail: "x@x.com",
+      clientId: `cid-default-${Date.now()}`,
+      mentions: "[]",
+      annotations: [],
+    });
+
+    const res = await handler.POST(
+      new Request(`http://test/api/colaborate/feedbacks/${fb.id}/screenshots`, {
+        method: "POST",
+        headers: { authorization: "Bearer secret", "content-type": "application/json" },
+        body: JSON.stringify({ dataUrl: PNG_DATA_URL }),
+      }),
+    );
+    expect(res.status).toBe(201);
+  });
 });

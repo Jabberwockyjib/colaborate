@@ -1,8 +1,11 @@
 import { MemoryStore } from "@colaborate/adapter-memory";
 import type { ColaborateStore } from "@colaborate/core";
 import { StoreValidationError } from "@colaborate/core";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it } from "vitest";
-import { handle, inputSchema } from "../../src/tools/attach-screenshot.js";
+import { createColaborateMcpServer } from "../../src/index.js";
+import { handle, inputSchema, makeInputSchema } from "../../src/tools/attach-screenshot.js";
 
 const PNG_DATA_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
@@ -88,5 +91,52 @@ describe("attach_screenshot tool", () => {
     );
     expect(result.isError).toBe(true);
     expect(result.content[0]!.text).toBe("Failed to attach screenshot: database is on fire");
+  });
+
+  it("makeInputSchema honors a custom cap (rejects payload exceeding the configured size)", () => {
+    const tinyCap = 1024;
+    const oversized = `data:image/png;base64,${"A".repeat(tinyCap + 1)}`;
+    const customSchema = makeInputSchema(tinyCap);
+
+    const parsed = customSchema.safeParse({ feedbackId: "any", dataUrl: oversized });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      const issue = parsed.error.issues.find((i) => i.path.join(".") === "dataUrl");
+      expect(issue?.message).toMatch(/cap/i);
+    }
+
+    // And the same payload passes with a larger cap
+    const looserSchema = makeInputSchema(tinyCap * 4);
+    const parsedLoose = looserSchema.safeParse({ feedbackId: "any", dataUrl: oversized });
+    expect(parsedLoose.success).toBe(true);
+  });
+
+  it("ServerContext.screenshotMaxBytes is honored end-to-end via the SDK Client", async () => {
+    // Wire a server with a tiny cap, then call attach_screenshot through the
+    // SDK Client/InMemoryTransport pair. The over-cap payload must be rejected by
+    // the published JSON schema, surfacing as a tool/protocol error.
+    const tinyCap = 2048;
+    const store = new MemoryStore();
+    const server = createColaborateMcpServer({ store, screenshotMaxBytes: tinyCap });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+    try {
+      const oversized = `data:image/png;base64,${"A".repeat(tinyCap + 1)}`;
+      // The SDK enforces the input schema before dispatch — over-cap payloads
+      // come back as an `isError: true` result whose text mentions the cap,
+      // proving the configured ServerContext.screenshotMaxBytes was honored.
+      const result = await client.callTool({
+        name: "attach_screenshot",
+        arguments: { feedbackId: "fb-1", dataUrl: oversized },
+      });
+      expect(result.isError).toBe(true);
+      const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
+      expect(text).toMatch(/cap|dataUrl/i);
+      expect(text).toContain(`${tinyCap}`); // Cap value appears in the error message
+    } finally {
+      await client.close();
+    }
   });
 });

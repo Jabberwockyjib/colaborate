@@ -1,5 +1,5 @@
 import type { FeedbackStatus, FeedbackType } from "@colaborate/core";
-import { FEEDBACK_STATUSES, FEEDBACK_TYPES } from "@colaborate/core";
+import { DEFAULT_SCREENSHOT_MAX_BYTES, FEEDBACK_STATUSES, FEEDBACK_TYPES } from "@colaborate/core";
 import * as zod from "zod";
 
 // Namespace import required: Zod publishes dual CJS/ESM, and bundlers (tsup, vitest) may
@@ -165,15 +165,26 @@ export const resolveSourceSchema = z.object({
   column: z.number().int().min(0),
 });
 
-/** 10 MB decoded cap (≈ 13.4 MB base64) — generous for a viewport PNG; blocks pathological payloads. */
-const SCREENSHOT_MAX_BASE64_LEN = 14 * 1024 * 1024;
+/**
+ * Build a screenshot-attach schema with a configurable max base64 length.
+ *
+ * `maxBytes` measures the length of the base64 portion of the dataUrl
+ * (`data:image/png;base64,<...>`); 14 MiB base64 ≈ 10 MiB decoded.
+ *
+ * Use the cached `screenshotAttachSchema` when the cap is the
+ * `DEFAULT_SCREENSHOT_MAX_BYTES`; call this factory when the cap is overridden
+ * via `HandlerOptions.screenshotMaxBytes`.
+ */
+export function makeScreenshotAttachSchema(maxBytes: number): zod.z.ZodObject<{ dataUrl: zod.z.ZodString }> {
+  return z.object({
+    dataUrl: z
+      .string()
+      .regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/, "dataUrl must be data:image/png;base64,<base64>")
+      .max(maxBytes, `dataUrl exceeds ${maxBytes}-byte cap`),
+  });
+}
 
-export const screenshotAttachSchema = z.object({
-  dataUrl: z
-    .string()
-    .regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/, "dataUrl must be data:image/png;base64,<base64>")
-    .max(SCREENSHOT_MAX_BASE64_LEN, "dataUrl exceeds 10 MB decoded cap"),
-});
+export const screenshotAttachSchema = makeScreenshotAttachSchema(DEFAULT_SCREENSHOT_MAX_BYTES);
 
 // ---------------------------------------------------------------------------
 // Explicit public interfaces — decoupled from Zod to keep .d.ts clean
