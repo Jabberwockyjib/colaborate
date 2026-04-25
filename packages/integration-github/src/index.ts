@@ -1,2 +1,7 @@
-// Public exports — populated in Tasks 9-10.
-export {};
+export type {
+  GitHubClient,
+  GitHubCreateIssueInput,
+  GitHubCreateIssueResponse,
+  GitHubUpdateIssuePatch,
+} from "./client.js";
+export { createGitHubClient, GitHubAdapterError } from "./client.js";
