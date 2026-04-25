@@ -1,3 +1,4 @@
+export { createGitHubAdapter } from "./adapter.js";
 export type {
   GitHubClient,
   GitHubCreateIssueInput,
