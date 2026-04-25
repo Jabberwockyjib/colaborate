@@ -139,6 +139,49 @@ export interface SessionResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Tracker integration — Phase 5 (triage worker → external issue trackers)
+// ---------------------------------------------------------------------------
+
+/** Input for creating a tracker issue. */
+export interface IssueInput {
+  title: string;
+  body: string;
+  labels?: string[] | undefined;
+}
+
+/** Returned reference for a created tracker issue. */
+export interface IssueRef {
+  provider: "github" | "linear";
+  /** Provider-specific id. For GitHub: the issue number as a string. */
+  issueId: string;
+  /** Canonical, browser-friendly URL. */
+  issueUrl: string;
+}
+
+/** Patch payload for updating an existing tracker issue. All fields optional. */
+export interface IssuePatch {
+  state?: "open" | "closed" | undefined;
+  body?: string | undefined;
+  labels?: string[] | undefined;
+}
+
+/**
+ * Abstract tracker adapter. Implementations live in `@colaborate/integration-github`
+ * (Phase 5) and `@colaborate/integration-linear` (Phase 6+). The triage worker
+ * depends on this interface, not on any specific implementation.
+ */
+export interface TrackerAdapter {
+  readonly name: "github" | "linear";
+  createIssue(input: IssueInput): Promise<IssueRef>;
+  updateIssue(ref: IssueRef, patch: IssuePatch): Promise<void>;
+  /**
+   * Phase 5 placeholder — used in Phase 6+ for tracker → feedback resolution sync.
+   * v0 implementations return `{ resolved: false }`.
+   */
+  linkResolve(ref: IssueRef): Promise<{ resolved: boolean }>;
+}
+
+// ---------------------------------------------------------------------------
 // Abstract Store — adapter pattern
 // ---------------------------------------------------------------------------
 
@@ -396,6 +439,17 @@ export interface ScreenshotResponse {
   url: string;
   byteSize: number;
   createdAt: string;
+}
+
+/**
+ * Aggregated view of a session loaded by the triage worker.
+ * Built by `loadSessionBundle` in `@colaborate/triage`.
+ */
+export interface SessionBundle {
+  session: SessionRecord;
+  feedbacks: FeedbackRecord[];
+  /** Map keyed by `feedbackId`. Empty array (not undefined) when a feedback has no screenshots. */
+  screenshotsByFeedbackId: Record<string, ScreenshotRecord[]>;
 }
 
 /**

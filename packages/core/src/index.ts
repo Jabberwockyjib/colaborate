@@ -30,12 +30,17 @@ export type {
   FeedbackStatus,
   FeedbackType,
   FeedbackUpdateInput,
+  IssueInput,
+  IssuePatch,
+  IssueRef,
   ScreenshotRecord,
   ScreenshotResponse,
+  SessionBundle,
   SessionCreateInput,
   SessionRecord,
   SessionResponse,
   SessionStatus,
+  TrackerAdapter,
 } from "./types.js";
 export {
   FEEDBACK_STATUSES,
