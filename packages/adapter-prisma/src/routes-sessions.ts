@@ -14,6 +14,7 @@ import { formatValidationErrors, sessionCreateBodySchema, sessionListQuerySchema
 export type SessionRoute =
   | { kind: "create" }
   | { kind: "submit"; id: string }
+  | { kind: "triage"; id: string }
   | { kind: "list" }
   | { kind: "get"; id: string };
 
@@ -39,6 +40,10 @@ export function matchSessionRoute(pathname: string, method: string): SessionRout
     if (method === "POST") return { kind: "submit", id: segments[0] };
     return null;
   }
+  if (segments.length === 2 && segments[0] && segments[1] === "triage") {
+    if (method === "POST") return { kind: "triage", id: segments[0] };
+    return null;
+  }
   return null;
 }
 
@@ -55,15 +60,46 @@ export async function handleCreateSession(request: Request, store: ColaborateSto
   return Response.json(record, { status: 201 });
 }
 
-export async function handleSubmitSession(store: ColaborateStore, id: string): Promise<Response> {
+export async function handleSubmitSession(
+  store: ColaborateStore,
+  id: string,
+  eventBus?: { emit(event: "session.submitted", payload: { sessionId: string }): void } | null,
+): Promise<Response> {
   try {
     const record = await store.submitSession(id);
+    eventBus?.emit("session.submitted", { sessionId: id });
     return Response.json(record, { status: 200 });
   } catch (error) {
     if (isStoreNotFoundLike(error)) {
       return Response.json({ error: "Session not found" }, { status: 404 });
     }
     throw error;
+  }
+}
+
+export async function handleTriageSession(
+  store: ColaborateStore,
+  id: string,
+  worker: { triageSession(id: string): Promise<{ status: "triaged" | "failed"; failureReason: string | null }> } | null,
+): Promise<Response> {
+  const session = await store.getSession(id);
+  if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
+  if (session.status !== "submitted" && session.status !== "failed") {
+    return Response.json({ error: `Cannot triage session in status '${session.status}'` }, { status: 409 });
+  }
+  if (!worker) {
+    return Response.json({ error: "Triage worker not configured" }, { status: 503 });
+  }
+  try {
+    const result = await worker.triageSession(id);
+    if (result.status === "failed") {
+      return Response.json({ error: result.failureReason ?? "Triage failed" }, { status: 500 });
+    }
+    const updated = await store.getSession(id);
+    return Response.json(updated, { status: 200 });
+  } catch (err) {
+    console.error("[colaborate] handleTriageSession unexpected error:", err);
+    return Response.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }
 }
 

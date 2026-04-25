@@ -30,6 +30,7 @@ import {
   handleGetSession,
   handleListSessions,
   handleSubmitSession,
+  handleTriageSession,
   matchSessionRoute,
 } from "./routes-sessions.js";
 import { handleResolveSource, handleUploadSourcemap, matchSourcemapRoute } from "./routes-sourcemaps.js";
@@ -429,6 +430,19 @@ export interface HandlerOptions {
    * fidelity captures and have the bandwidth.
    */
   screenshotMaxBytes?: number | undefined;
+  /**
+   * Optional triage worker. When provided, the manual retry route
+   * `POST /api/colaborate/sessions/:id/triage` becomes available.
+   */
+  triage?:
+    | { triageSession(id: string): Promise<{ status: "triaged" | "failed"; failureReason: string | null }> }
+    | undefined;
+  /**
+   * Optional event bus. When provided, `handleSubmitSession` emits
+   * `session.submitted` after the status flip — wire a `TriageWorker` to
+   * the same bus to get fire-and-forget triage on submit.
+   */
+  eventBus?: { emit(event: "session.submitted", payload: { sessionId: string }): void } | undefined;
 }
 
 /**
@@ -532,6 +546,8 @@ export function createColaborateHandler({
   screenshotStore: providedScreenshotStore,
   screenshotStorePath,
   screenshotMaxBytes = DEFAULT_SCREENSHOT_MAX_BYTES,
+  triage,
+  eventBus,
 }: HandlerOptions): ColaborateHandler {
   if (!providedStore && !prisma) {
     throw new Error("[colaborate] createColaborateHandler requires either `store` or `prisma`.");
@@ -628,7 +644,10 @@ export function createColaborateHandler({
             return withCors(await handleCreateSession(request, store), corsHeaders);
           }
           if (sessionRoute.kind === "submit") {
-            return withCors(await handleSubmitSession(store, sessionRoute.id), corsHeaders);
+            return withCors(await handleSubmitSession(store, sessionRoute.id, eventBus), corsHeaders);
+          }
+          if (sessionRoute.kind === "triage") {
+            return withCors(await handleTriageSession(store, sessionRoute.id, triage ?? null), corsHeaders);
           }
           // Defensive — matchSessionRoute couples kind to method; this can't happen
           // in normal flow but we refuse to fall through to feedback-POST handling.

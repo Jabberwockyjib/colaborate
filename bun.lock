@@ -61,10 +61,16 @@
       "devDependencies": {
         "@colaborate/adapter-memory": "workspace:*",
         "@colaborate/core": "workspace:*",
+        "@colaborate/triage": "workspace:*",
       },
       "peerDependencies": {
+        "@colaborate/core": "workspace:*",
+        "@colaborate/triage": "workspace:*",
         "@prisma/client": "^5.0.0 || ^6.0.0",
       },
+      "optionalPeers": [
+        "@colaborate/triage",
+      ],
     },
     "packages/cli": {
       "name": "@colaborate/cli",

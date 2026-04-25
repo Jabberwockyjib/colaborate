@@ -141,7 +141,7 @@ export const sessionCreateBodySchema = z.object({
 
 export const sessionListQuerySchema = z.object({
   projectName: z.string().min(1).max(200),
-  status: z.enum(["drafting", "submitted", "triaged", "archived"] as const).optional(),
+  status: z.enum(["drafting", "submitted", "triaged", "failed", "archived"] as const).optional(),
 });
 
 export const sourcemapUploadSchema = z.object({
