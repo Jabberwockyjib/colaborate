@@ -42,7 +42,9 @@ export {
   flattenAnnotation,
   isStoreDuplicate,
   isStoreNotFound,
+  isStoreValidation,
   SESSION_STATUSES,
   StoreDuplicateError,
   StoreNotFoundError,
+  StoreValidationError,
 } from "./types.js";

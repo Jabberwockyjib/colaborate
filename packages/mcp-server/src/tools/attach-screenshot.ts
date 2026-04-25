@@ -1,3 +1,4 @@
+import { isStoreValidation } from "@colaborate/core";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ServerContext } from "../types.js";
@@ -31,6 +32,14 @@ export async function handle(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    // Distinguish caller-input errors from server faults so the LLM knows whether
+    // to retry with corrected input vs. surface a server problem.
+    if (isStoreValidation(error)) {
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Invalid screenshot input: ${message}` }],
+      };
+    }
     return {
       isError: true,
       content: [{ type: "text", text: `Failed to attach screenshot: ${message}` }],

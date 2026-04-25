@@ -12,6 +12,7 @@ import {
   type SessionCreateInput,
   type SessionRecord,
   type SessionStatus,
+  StoreValidationError,
   serializeMentions,
 } from "@colaborate/core";
 import { FsScreenshotStore } from "./fs-screenshot-store.js";
@@ -47,7 +48,14 @@ export type {
   SourcemapRecord,
   SourcemapStore,
 } from "@colaborate/core";
-export { flattenAnnotation, StoreDuplicateError, StoreNotFoundError, serializeMentions } from "@colaborate/core";
+export {
+  flattenAnnotation,
+  isStoreValidation,
+  StoreDuplicateError,
+  StoreNotFoundError,
+  StoreValidationError,
+  serializeMentions,
+} from "@colaborate/core";
 export { FsScreenshotStore } from "./fs-screenshot-store.js";
 export { FsSourcemapStore } from "./fs-sourcemap-store.js";
 export { hashPngBytes } from "./screenshot-hash.js";
@@ -97,10 +105,17 @@ export interface ColaboratePrismaClient {
 const INCLUDE_ANNOTATIONS = { annotations: true };
 
 const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
+/** PNG file signature — first 8 bytes of every valid PNG. */
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 /**
  * Decode a PNG data URL to a Node Buffer. Synchronous — uses Node's native
- * base64 decoder. Throws on malformed input.
+ * base64 decoder. Throws `StoreValidationError` on malformed input — the calling
+ * HTTP handler / MCP tool maps that to a 400-class error.
+ *
+ * Note: `Buffer.from(base64, "base64")` does NOT throw on malformed base64; it
+ * silently returns garbage bytes. We therefore validate the decoded payload
+ * starts with the PNG signature as the actual gate.
  *
  * Note: this is the sync Node-Buffer equivalent of the async `decodePngDataUrl`
  * duplicated in `@colaborate/adapter-memory` and `@colaborate/adapter-localstorage`.
@@ -111,15 +126,22 @@ const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
  */
 function decodePngDataUrl(dataUrl: string): Buffer {
   if (!dataUrl.startsWith(PNG_DATA_URL_PREFIX)) {
-    throw new Error("Invalid dataUrl: expected 'data:image/png;base64,...'");
+    throw new StoreValidationError("Invalid dataUrl: expected 'data:image/png;base64,...'");
   }
   const base64 = dataUrl.slice(PNG_DATA_URL_PREFIX.length);
-  if (base64.length === 0) throw new Error("Invalid dataUrl: empty body");
+  if (base64.length === 0) throw new StoreValidationError("Invalid dataUrl: empty body");
+  let bytes: Buffer;
   try {
-    return Buffer.from(base64, "base64");
-  } catch {
-    throw new Error("Invalid dataUrl: base64 decode failed");
+    bytes = Buffer.from(base64, "base64");
+  } catch (cause) {
+    throw new StoreValidationError(
+      `Invalid dataUrl: base64 decode failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
   }
+  if (bytes.length < PNG_SIGNATURE.length || !bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+    throw new StoreValidationError("Invalid dataUrl: decoded bytes are not a PNG (missing signature)");
+  }
+  return bytes;
 }
 
 /**

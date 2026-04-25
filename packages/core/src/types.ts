@@ -291,6 +291,22 @@ export class StoreDuplicateError extends Error {
   }
 }
 
+/**
+ * Thrown when the store rejects an input as invalid (e.g. malformed PNG dataUrl that
+ * passes a Zod regex but fails downstream decode).
+ *
+ * Handlers translate this to HTTP 400 — it indicates a client error, not a server
+ * fault. Adapters MUST throw this (not raw decode errors) so the handler layer can
+ * distinguish bad input from infrastructure failures.
+ */
+export class StoreValidationError extends Error {
+  readonly code = "STORE_VALIDATION" as const;
+  constructor(message = "Invalid input") {
+    super(message);
+    this.name = "StoreValidationError";
+  }
+}
+
 /** Type guard — works for `StoreNotFoundError` and ORM-specific equivalents (e.g. Prisma P2025). */
 export function isStoreNotFound(error: unknown): boolean {
   if (error instanceof StoreNotFoundError) return true;
@@ -311,6 +327,14 @@ export function isStoreDuplicate(error: unknown): boolean {
   if (code === "STORE_DUPLICATE") return true;
   // Backwards compat: Prisma's P2002
   return code === "P2002";
+}
+
+/** Type guard — works for `StoreValidationError` across module-duplication boundaries. */
+export function isStoreValidation(error: unknown): boolean {
+  if (error instanceof StoreValidationError) return true;
+  if (typeof error !== "object" || error === null || !("code" in error)) return false;
+  const code = (error as { code: string }).code;
+  return code === "STORE_VALIDATION";
 }
 
 // ---------------------------------------------------------------------------

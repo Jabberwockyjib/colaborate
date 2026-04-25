@@ -1,4 +1,4 @@
-import type { ColaborateStore } from "@colaborate/core";
+import { type ColaborateStore, isStoreValidation } from "@colaborate/core";
 import type { FsScreenshotStore } from "./fs-screenshot-store.js";
 import { formatValidationErrors, screenshotAttachSchema } from "./validation.js";
 
@@ -53,6 +53,10 @@ export async function handleAttachScreenshot(
     const record = await store.attachScreenshot(feedbackId, parsed.data.dataUrl);
     return Response.json(record, { status: 201 });
   } catch (error) {
+    if (isStoreValidation(error)) {
+      const message = error instanceof Error ? error.message : "Invalid screenshot input";
+      return Response.json({ error: message }, { status: 400 });
+    }
     console.error("[colaborate] attachScreenshot failed:", error);
     return Response.json({ error: "Failed to attach screenshot" }, { status: 500 });
   }

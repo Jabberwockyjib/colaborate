@@ -11,10 +11,11 @@ import {
   type SessionRecord,
   type SessionStatus,
   StoreNotFoundError,
+  StoreValidationError,
 } from "@colaborate/core";
 
 export type { ColaborateStore } from "@colaborate/core";
-export { StoreDuplicateError, StoreNotFoundError } from "@colaborate/core";
+export { StoreDuplicateError, StoreNotFoundError, StoreValidationError } from "@colaborate/core";
 
 const DEFAULT_KEY = "colaborate_feedbacks";
 const DEFAULT_SESSIONS_KEY = "colaborate_sessions";
@@ -30,9 +31,12 @@ export interface LocalStorageStoreOptions {
 }
 
 const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
+/** PNG file signature — first 8 bytes of every valid PNG. */
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 /**
- * Decode a PNG data URL to raw bytes + hex SHA-256. Throws on malformed input.
+ * Decode a PNG data URL to raw bytes + hex SHA-256. Throws `StoreValidationError`
+ * on malformed input — the caller (HTTP handler / MCP tool) maps this to a 400-class error.
  *
  * Note: this helper is duplicated between `@colaborate/adapter-memory` and this
  * adapter. We intentionally do NOT promote it to `@colaborate/core` yet — only
@@ -46,23 +50,36 @@ const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
  */
 async function decodePngDataUrl(dataUrl: string): Promise<{ bytes: Uint8Array; hash: string }> {
   if (!dataUrl.startsWith(PNG_DATA_URL_PREFIX)) {
-    throw new Error("Invalid dataUrl: expected 'data:image/png;base64,...'");
+    throw new StoreValidationError("Invalid dataUrl: expected 'data:image/png;base64,...'");
   }
   const base64 = dataUrl.slice(PNG_DATA_URL_PREFIX.length);
-  if (base64.length === 0) throw new Error("Invalid dataUrl: empty body");
+  if (base64.length === 0) throw new StoreValidationError("Invalid dataUrl: empty body");
   let bytes: Uint8Array<ArrayBuffer>;
   try {
     const binary = atob(base64);
     bytes = new Uint8Array(new ArrayBuffer(binary.length));
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  } catch {
-    throw new Error("Invalid dataUrl: base64 decode failed");
+  } catch (cause) {
+    throw new StoreValidationError(
+      `Invalid dataUrl: base64 decode failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+  }
+  if (!hasPngSignature(bytes)) {
+    throw new StoreValidationError("Invalid dataUrl: decoded bytes are not a PNG (missing signature)");
   }
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   const hash = Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
   return { bytes, hash };
+}
+
+function hasPngSignature(bytes: Uint8Array): boolean {
+  if (bytes.length < PNG_SIGNATURE.length) return false;
+  for (let i = 0; i < PNG_SIGNATURE.length; i++) {
+    if (bytes[i] !== PNG_SIGNATURE[i]) return false;
+  }
+  return true;
 }
 
 /**

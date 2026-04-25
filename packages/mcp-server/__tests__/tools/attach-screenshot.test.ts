@@ -1,4 +1,6 @@
 import { MemoryStore } from "@colaborate/adapter-memory";
+import type { ColaborateStore } from "@colaborate/core";
+import { StoreValidationError } from "@colaborate/core";
 import { describe, expect, it } from "vitest";
 import { handle, inputSchema } from "../../src/tools/attach-screenshot.js";
 
@@ -45,5 +47,46 @@ describe("attach_screenshot tool", () => {
       const issue = parsed.error.issues.find((i) => i.path.join(".") === "dataUrl");
       expect(issue?.message).toMatch(/10 MB|cap/i);
     }
+  });
+
+  it("flags non-PNG bytes as invalid input (validation-flavored error text)", async () => {
+    // dataUrl passes the Zod regex (valid base64 chars) but decodes to bytes that
+    // are NOT a PNG — exercises the store's signature gate.
+    const notAPng = `data:image/png;base64,${Buffer.from("definitely not a png").toString("base64")}`;
+    const store = new MemoryStore();
+    const result = await handle({ feedbackId: "any", dataUrl: notAPng }, { store });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toMatch(/^Invalid screenshot input:/);
+  });
+
+  it("surfaces validation errors with a distinct prefix when the store throws StoreValidationError", async () => {
+    // A custom store that throws StoreValidationError directly. The MCP tool must
+    // surface this as a validation-flavored error, not a generic server error.
+    const validatingStore: Partial<ColaborateStore> = {
+      attachScreenshot: async () => {
+        throw new StoreValidationError("custom validation failure");
+      },
+    };
+    const result = await handle(
+      { feedbackId: "any", dataUrl: PNG_DATA_URL },
+      { store: validatingStore as ColaborateStore },
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toBe("Invalid screenshot input: custom validation failure");
+  });
+
+  it("surfaces generic server errors with the generic prefix", async () => {
+    // A store throwing a non-validation Error must NOT be classified as input error.
+    const failingStore: Partial<ColaborateStore> = {
+      attachScreenshot: async () => {
+        throw new Error("database is on fire");
+      },
+    };
+    const result = await handle(
+      { feedbackId: "any", dataUrl: PNG_DATA_URL },
+      { store: failingStore as ColaborateStore },
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toBe("Failed to attach screenshot: database is on fire");
   });
 });

@@ -2,6 +2,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemoryStore } from "@colaborate/adapter-memory";
+import type { ColaborateStore, ScreenshotRecord } from "@colaborate/core";
+import { StoreValidationError } from "@colaborate/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FsScreenshotStore } from "../src/fs-screenshot-store.js";
 import {
@@ -86,6 +88,59 @@ describe("handleAttachScreenshot", () => {
     });
     const res = await handleAttachScreenshot(req, store, "fb-1");
     expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when the store throws StoreValidationError (e.g. base64-pads-to-non-PNG)", async () => {
+    // dataUrl passes the Zod regex (valid base64 chars) but decodes to bytes that
+    // are NOT a PNG — exercising the signature gate inside the store.
+    const notAPng = `data:image/png;base64,${Buffer.from("not actually a png at all").toString("base64")}`;
+    const req = new Request("http://test/api/colaborate/feedbacks/fb-1/screenshots", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dataUrl: notAPng }),
+    });
+    const res = await handleAttachScreenshot(req, store, "fb-1");
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/PNG|signature|invalid/i);
+  });
+
+  it("returns 500 when the store throws an unrelated error", async () => {
+    // Use a stub store whose attachScreenshot rejects with a generic Error — not
+    // a StoreValidationError. The handler must NOT mistake this for client error.
+    const failingStore: Partial<ColaborateStore> = {
+      attachScreenshot: async () => {
+        throw new Error("database is on fire");
+      },
+    };
+    const req = new Request("http://test/api/colaborate/feedbacks/fb-1/screenshots", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      // valid 1x1 PNG so Zod accepts the body
+      body: JSON.stringify({ dataUrl: PNG_DATA_URL }),
+    });
+    const res = await handleAttachScreenshot(req, failingStore as ColaborateStore, "fb-1");
+    expect(res.status).toBe(500);
+  });
+
+  it("preserves StoreValidationError 400 path even with a custom store implementation", async () => {
+    // Belt-and-braces: if a non-built-in adapter throws StoreValidationError, the
+    // route still classifies it as a 400. Demonstrates the contract is on the error
+    // type, not on built-in adapter behavior.
+    const validatingStore: Partial<ColaborateStore> = {
+      attachScreenshot: async (): Promise<ScreenshotRecord> => {
+        throw new StoreValidationError("custom adapter says no");
+      },
+    };
+    const req = new Request("http://test/api/colaborate/feedbacks/fb-1/screenshots", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dataUrl: PNG_DATA_URL }),
+    });
+    const res = await handleAttachScreenshot(req, validatingStore as ColaborateStore, "fb-1");
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("custom adapter says no");
   });
 });
 
