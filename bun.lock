@@ -85,6 +85,16 @@
       "name": "@colaborate/core",
       "version": "0.0.0",
     },
+    "packages/integration-github": {
+      "name": "@colaborate/integration-github",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@colaborate/core": "workspace:*",
+      },
+      "peerDependencies": {
+        "@colaborate/core": "workspace:*",
+      },
+    },
     "packages/mcp-server": {
       "name": "@colaborate/mcp-server",
       "version": "0.0.0",
@@ -197,6 +207,8 @@
     "@colaborate/core": ["@colaborate/core@workspace:packages/core"],
 
     "@colaborate/demo": ["@colaborate/demo@workspace:apps/demo"],
+
+    "@colaborate/integration-github": ["@colaborate/integration-github@workspace:packages/integration-github"],
 
     "@colaborate/mcp-server": ["@colaborate/mcp-server@workspace:packages/mcp-server"],
 
