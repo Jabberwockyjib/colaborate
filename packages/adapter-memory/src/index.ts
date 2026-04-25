@@ -203,6 +203,7 @@ export class MemoryStore implements ColaborateStore {
       submittedAt: null,
       triagedAt: null,
       notes: data.notes ?? null,
+      failureReason: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -260,6 +261,49 @@ export class MemoryStore implements ColaborateStore {
 
   async listScreenshots(feedbackId: string): Promise<ScreenshotRecord[]> {
     return (this.screenshots.get(feedbackId) ?? []).slice();
+  }
+
+  async setFeedbackExternalIssue(
+    id: string,
+    data: { provider: string; issueId: string; issueUrl: string },
+  ): Promise<FeedbackRecord> {
+    const fb = this.feedbacks.find((f) => f.id === id);
+    if (!fb) throw new StoreNotFoundError();
+    fb.externalProvider = data.provider;
+    fb.externalIssueId = data.issueId;
+    fb.externalIssueUrl = data.issueUrl;
+    fb.updatedAt = new Date();
+    return fb;
+  }
+
+  async markSessionTriaged(id: string): Promise<SessionRecord> {
+    const session = this.sessions.find((s) => s.id === id);
+    if (!session) throw new StoreNotFoundError();
+    if (session.status !== "submitted" && session.status !== "failed") {
+      throw new StoreValidationError(
+        `Cannot mark session as triaged from status '${session.status}' (expected 'submitted' or 'failed')`,
+      );
+    }
+    const now = new Date();
+    session.status = "triaged";
+    session.triagedAt = now;
+    session.failureReason = null;
+    session.updatedAt = now;
+    return session;
+  }
+
+  async markSessionFailed(id: string, reason: string): Promise<SessionRecord> {
+    const session = this.sessions.find((s) => s.id === id);
+    if (!session) throw new StoreNotFoundError();
+    if (session.status !== "submitted" && session.status !== "failed") {
+      throw new StoreValidationError(
+        `Cannot mark session as failed from status '${session.status}' (expected 'submitted' or 'failed')`,
+      );
+    }
+    session.status = "failed";
+    session.failureReason = reason;
+    session.updatedAt = new Date();
+    return session;
   }
 
   /** Remove all data from this store instance. */
