@@ -1,2 +1,7 @@
-// Public exports — populated in Tasks 12-17.
-export {};
+export {
+  InProcessEventBus,
+  type TriageEventBus,
+  type TriageEventHandler,
+  type TriageEventName,
+  type TriageEvents,
+} from "./event-bus.js";
