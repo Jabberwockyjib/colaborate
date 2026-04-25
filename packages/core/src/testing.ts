@@ -16,7 +16,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { ColaborateStore, FeedbackCreateInput, SessionCreateInput } from "./types.js";
-import { StoreNotFoundError } from "./types.js";
+import { StoreNotFoundError, StoreValidationError } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Test fixture
@@ -494,6 +494,129 @@ export function testColaborateStore(factory: () => ColaborateStore): void {
         const byClient = Object.fromEntries(feedbacks.map((f) => [f.clientId, f.status]));
         expect(byClient["c-res"]).toBe("resolved");
         expect(byClient["c-draft"]).toBe("open");
+      });
+    });
+
+    // ------------------------------------------------------------------
+    // Phase 5 — tracker write-back + session state-machine
+    // ------------------------------------------------------------------
+
+    describe("setFeedbackExternalIssue", () => {
+      it("persists provider/issueId/issueUrl onto an existing feedback", async () => {
+        freshStore();
+        const fb = await store.createFeedback(createInput({ clientId: "c-extissue" }));
+        const updated = await store.setFeedbackExternalIssue(fb.id, {
+          provider: "github",
+          issueId: "42",
+          issueUrl: "https://github.com/owner/repo/issues/42",
+        });
+        expect(updated.externalProvider).toBe("github");
+        expect(updated.externalIssueId).toBe("42");
+        expect(updated.externalIssueUrl).toBe("https://github.com/owner/repo/issues/42");
+      });
+
+      it("returns the full FeedbackRecord (with annotations)", async () => {
+        freshStore();
+        const fb = await store.createFeedback(createInput({ clientId: "c-extissue-rec" }));
+        const updated = await store.setFeedbackExternalIssue(fb.id, {
+          provider: "github",
+          issueId: "1",
+          issueUrl: "https://x/1",
+        });
+        expect(updated.id).toBe(fb.id);
+        expect(updated.annotations).toHaveLength(1);
+      });
+
+      it("throws StoreNotFoundError for unknown id", async () => {
+        freshStore();
+        await expect(
+          store.setFeedbackExternalIssue("nope", {
+            provider: "github",
+            issueId: "1",
+            issueUrl: "https://x/1",
+          }),
+        ).rejects.toThrow(StoreNotFoundError);
+      });
+    });
+
+    describe("markSessionTriaged", () => {
+      it("transitions submitted → triaged + stamps triagedAt + clears failureReason", async () => {
+        freshStore();
+        const session = await store.createSession(createSessionInput());
+        await store.submitSession(session.id);
+        const triaged = await store.markSessionTriaged(session.id);
+        expect(triaged.status).toBe("triaged");
+        expect(triaged.triagedAt).toBeInstanceOf(Date);
+        expect(triaged.failureReason).toBeNull();
+      });
+
+      it("transitions failed → triaged (retry success path)", async () => {
+        freshStore();
+        const session = await store.createSession(createSessionInput());
+        await store.submitSession(session.id);
+        await store.markSessionFailed(session.id, "anthropic: rate limit");
+        const triaged = await store.markSessionTriaged(session.id);
+        expect(triaged.status).toBe("triaged");
+        expect(triaged.failureReason).toBeNull();
+      });
+
+      it("throws StoreNotFoundError for unknown id", async () => {
+        freshStore();
+        await expect(store.markSessionTriaged("nope")).rejects.toThrow(StoreNotFoundError);
+      });
+
+      it("throws StoreValidationError when current status is 'drafting'", async () => {
+        freshStore();
+        const session = await store.createSession(createSessionInput());
+        await expect(store.markSessionTriaged(session.id)).rejects.toThrow(StoreValidationError);
+      });
+
+      it("throws StoreValidationError when current status is 'triaged' (idempotent guard)", async () => {
+        freshStore();
+        const session = await store.createSession(createSessionInput());
+        await store.submitSession(session.id);
+        await store.markSessionTriaged(session.id);
+        await expect(store.markSessionTriaged(session.id)).rejects.toThrow(StoreValidationError);
+      });
+    });
+
+    describe("markSessionFailed", () => {
+      it("transitions submitted → failed + persists reason", async () => {
+        freshStore();
+        const session = await store.createSession(createSessionInput());
+        await store.submitSession(session.id);
+        const failed = await store.markSessionFailed(session.id, "anthropic: 429");
+        expect(failed.status).toBe("failed");
+        expect(failed.failureReason).toBe("anthropic: 429");
+      });
+
+      it("permits failed → failed (retry-then-fail)", async () => {
+        freshStore();
+        const session = await store.createSession(createSessionInput());
+        await store.submitSession(session.id);
+        await store.markSessionFailed(session.id, "first");
+        const second = await store.markSessionFailed(session.id, "second");
+        expect(second.status).toBe("failed");
+        expect(second.failureReason).toBe("second");
+      });
+
+      it("throws StoreNotFoundError for unknown id", async () => {
+        freshStore();
+        await expect(store.markSessionFailed("nope", "reason")).rejects.toThrow(StoreNotFoundError);
+      });
+
+      it("throws StoreValidationError when current status is 'drafting'", async () => {
+        freshStore();
+        const session = await store.createSession(createSessionInput());
+        await expect(store.markSessionFailed(session.id, "reason")).rejects.toThrow(StoreValidationError);
+      });
+
+      it("throws StoreValidationError when current status is 'triaged'", async () => {
+        freshStore();
+        const session = await store.createSession(createSessionInput());
+        await store.submitSession(session.id);
+        await store.markSessionTriaged(session.id);
+        await expect(store.markSessionFailed(session.id, "reason")).rejects.toThrow(StoreValidationError);
       });
     });
 
