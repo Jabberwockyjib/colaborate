@@ -78,17 +78,18 @@ model ColaborateAnnotation {
 }
 
 model ColaborateSession {
-  id            String   @id @default(cuid())
-  projectName   String
-  reviewerName  String?
-  reviewerEmail String?
-  status        String   @default("drafting")
-  submittedAt   DateTime?
-  triagedAt     DateTime?
-  notes         String?  @db.Text
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  feedbacks     ColaborateFeedback[]
+  id             String   @id @default(cuid())
+  projectName    String
+  reviewerName   String?
+  reviewerEmail  String?
+  status         String   @default("drafting")
+  submittedAt    DateTime?
+  triagedAt      DateTime?
+  notes          String?  @db.Text
+  failureReason  String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  feedbacks      ColaborateFeedback[]
 
   @@index([projectName, status])
 }

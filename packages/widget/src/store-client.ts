@@ -185,6 +185,7 @@ function toSessionResponse(record: SessionRecord): SessionResponse {
     submittedAt: record.submittedAt?.toISOString() ?? null,
     triagedAt: record.triagedAt?.toISOString() ?? null,
     notes: record.notes,
+    failureReason: record.failureReason,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   };

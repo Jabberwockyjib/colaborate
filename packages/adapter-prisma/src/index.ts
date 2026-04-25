@@ -13,6 +13,7 @@ import {
   type SessionCreateInput,
   type SessionRecord,
   type SessionStatus,
+  StoreNotFoundError,
   StoreValidationError,
   serializeMentions,
 } from "@colaborate/core";
@@ -325,6 +326,54 @@ export class PrismaStore implements ColaborateStore {
   async listScreenshots(feedbackId: string): Promise<ScreenshotRecord[]> {
     if (!this.screenshotStore) return [];
     return this.screenshotStore.listScreenshots(feedbackId);
+  }
+
+  async setFeedbackExternalIssue(
+    id: string,
+    data: { provider: string; issueId: string; issueUrl: string },
+  ): Promise<FeedbackRecord> {
+    try {
+      return (await this.prisma.colaborateFeedback.update({
+        where: { id },
+        data: {
+          externalProvider: data.provider,
+          externalIssueId: data.issueId,
+          externalIssueUrl: data.issueUrl,
+        },
+        include: INCLUDE_ANNOTATIONS,
+      })) as FeedbackRecord;
+    } catch (error) {
+      if (isStoreNotFound(error)) throw new StoreNotFoundError();
+      throw error;
+    }
+  }
+
+  async markSessionTriaged(id: string): Promise<SessionRecord> {
+    const current = (await this.prisma.colaborateSession.findUnique({ where: { id } })) as { status: string } | null;
+    if (!current) throw new StoreNotFoundError();
+    if (current.status !== "submitted" && current.status !== "failed") {
+      throw new StoreValidationError(
+        `Cannot mark session as triaged from status '${current.status}' (expected 'submitted' or 'failed')`,
+      );
+    }
+    return (await this.prisma.colaborateSession.update({
+      where: { id },
+      data: { status: "triaged", triagedAt: new Date(), failureReason: null },
+    })) as SessionRecord;
+  }
+
+  async markSessionFailed(id: string, reason: string): Promise<SessionRecord> {
+    const current = (await this.prisma.colaborateSession.findUnique({ where: { id } })) as { status: string } | null;
+    if (!current) throw new StoreNotFoundError();
+    if (current.status !== "submitted" && current.status !== "failed") {
+      throw new StoreValidationError(
+        `Cannot mark session as failed from status '${current.status}' (expected 'submitted' or 'failed')`,
+      );
+    }
+    return (await this.prisma.colaborateSession.update({
+      where: { id },
+      data: { status: "failed", failureReason: reason },
+    })) as SessionRecord;
   }
 }
 
