@@ -57,7 +57,8 @@
   "devDependencies": {
     "@colaborate/adapter-memory": "workspace:*",
     "@colaborate/core": "workspace:*",
-    "@colaborate/triage": "workspace:*"
+    "@colaborate/triage": "workspace:*",
+    "@types/node": "^25.5.0"
   },
   "peerDependencies": {
     "@colaborate/core": "workspace:*",

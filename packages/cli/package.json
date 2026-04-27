@@ -45,6 +45,7 @@
   "devDependencies": {
     "@colaborate/core": "workspace:*",
     "@colaborate/adapter-prisma": "workspace:*",
+    "@types/node": "^25.5.0",
     "commander": "^14.0.3",
     "@clack/prompts": "^1.2.0",
     "@mrleebo/prisma-ast": "^0.15.0",

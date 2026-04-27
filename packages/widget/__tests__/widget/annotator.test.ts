@@ -17,10 +17,12 @@ mockMatchMedia(false);
 // ---------------------------------------------------------------------------
 
 vi.mock(new URL("../../src/popup.js", import.meta.url).pathname, () => ({
-  Popup: vi.fn().mockImplementation(() => ({
-    show: vi.fn().mockImplementation(() => Promise.resolve({ type: "bug" as const, message: "Test message" })),
-    destroy: vi.fn(),
-  })),
+  Popup: vi.fn().mockImplementation(function () {
+    return {
+      show: vi.fn().mockImplementation(() => Promise.resolve({ type: "bug" as const, message: "Test message" })),
+      destroy: vi.fn(),
+    };
+  }),
 }));
 
 // Mock anchor helpers to avoid @medv/finder dependency in jsdom
@@ -696,6 +698,8 @@ describe("Annotator", () => {
         bus.emit("annotation:start");
         const div = document.createElement("div");
         div.contentEditable = "true";
+        // jsdom 29.x doesn't reflect contentEditable into isContentEditable; force it.
+        Object.defineProperty(div, "isContentEditable", { value: true, configurable: true });
         document.body.appendChild(div);
 
         const event = new KeyboardEvent("keydown", { key: "a", bubbles: true, cancelable: true });

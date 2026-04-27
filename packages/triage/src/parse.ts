@@ -76,7 +76,7 @@ export function parseTriageOutput(text: string, knownFeedbackIds: readonly strin
   const result = issuesSchema.safeParse(parsed);
   if (!result.success) {
     throw new TriageParseError(
-      `LLM output failed schema validation: ${result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
+      `LLM output failed schema validation: ${result.error.issues.map((i) => `${i.path.map((p) => String(p)).join(".")}: ${i.message}`).join("; ")}`,
       text,
     );
   }
