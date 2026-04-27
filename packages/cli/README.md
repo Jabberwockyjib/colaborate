@@ -4,9 +4,9 @@
 
 # @colaborate/cli
 
-CLI tool to set up [Colaborate](https://github.com/NeosiaNexus/Colaborate) in your project — scaffolds Prisma schema and API routes.
+CLI tool to set up [Colaborate](https://github.com/Jabberwockyjib/colaborate) in your project — scaffolds Prisma schema and API routes.
 
-Part of the [@colaborate](https://github.com/develotype/colaborate) monorepo — **[try the live demo](https://colaborate.develotype.com/demo)**.
+Part of the [@colaborate](https://github.com/Jabberwockyjib/colaborate) monorepo.
 
 ## Usage
 
@@ -22,6 +22,7 @@ npx @colaborate/cli init
 | `sync` | Non-interactive Prisma schema sync (CI-friendly) |
 | `status` | Diagnostic check of your Colaborate integration |
 | `doctor` | Test API endpoint connectivity |
+| `upload-sourcemaps` | Upload `.map` files to the ingest endpoint for source-resolved feedback |
 
 ### `init`
 
@@ -59,6 +60,20 @@ Tests API connectivity:
 npx @colaborate/cli doctor --url http://localhost:3000
 ```
 
+### `upload-sourcemaps`
+
+Sentry-style ingest. Uploads every `.map` under `--dir` to the configured Colaborate server, gzipped and hash-verified, so the backend can resolve bundled `line:col` to original `file:line:col` for feedbacks.
+
+```bash
+npx @colaborate/cli upload-sourcemaps \
+  --project my-app \
+  --env staging \
+  --dir .next/ \
+  --url https://colaborate.example.com
+```
+
+Auth: passes `--api-key` or `COLABORATE_API_KEY` env as `Authorization: Bearer …`. Requires the server to have a `sourcemapStore` configured (see [`@colaborate/adapter-prisma`](../adapter-prisma)).
+
 ## Related Packages
 
 | Package | Description |
@@ -70,4 +85,4 @@ npx @colaborate/cli doctor --url http://localhost:3000
 
 ## License
 
-[MIT](https://github.com/NeosiaNexus/Colaborate/blob/main/LICENSE)
+[MIT](https://github.com/Jabberwockyjib/colaborate/blob/main/LICENSE)

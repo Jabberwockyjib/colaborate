@@ -1,7 +1,7 @@
 const faqs = [
   {
     q: "What databases are supported?",
-    a: "Any database supported by Prisma — PostgreSQL, MySQL, SQLite, MongoDB, CockroachDB, and more. A Drizzle adapter is on the roadmap.",
+    a: "Any database supported by Prisma — PostgreSQL, MySQL, SQLite, MongoDB, CockroachDB, and more. There are also in-memory and localStorage adapters for testing, demos, and client-side prototyping.",
   },
   {
     q: "Does it work with frameworks other than Next.js?",
@@ -21,7 +21,7 @@ const faqs = [
   },
   {
     q: "Is it GDPR compliant?",
-    a: "Fully. Since SitePing is self-hosted, all data stays on your infrastructure. No data is ever sent to third-party servers. You control storage, retention, and deletion.",
+    a: "Fully. Since Colaborate is self-hosted, all data stays on your infrastructure. No data is ever sent to third-party servers — except optional outbound calls you opt into (Anthropic for triage, GitHub or Linear for issue creation). You control storage, retention, and deletion.",
   },
   {
     q: "Can I customize the widget appearance?",
@@ -29,7 +29,11 @@ const faqs = [
   },
   {
     q: "Do I need to create an account?",
-    a: "No. SitePing is an npm package you install and configure. No account, no API key, no signup. It runs entirely on your infrastructure.",
+    a: "No. Colaborate is an npm package you install and configure. No account, no signup. An API key is optional — it gates the ingest endpoints when you set one. Runs entirely on your infrastructure.",
+  },
+  {
+    q: "How does LLM triage work?",
+    a: "When a reviewer submits a session, the triage worker reads the bundle, calls Anthropic to group the feedbacks into one or more well-formed tracker issues, and files them via the configured adapter (GitHub today; Linear next). Each feedback gets the resulting issue URL written back, and the session flips to triaged. Optional — set ANTHROPIC_API_KEY, GITHUB_TOKEN, and COLABORATE_GITHUB_REPO to enable; without them, sessions submit and stop.",
   },
 ];
 
