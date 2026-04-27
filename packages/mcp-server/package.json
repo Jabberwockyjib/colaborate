@@ -63,6 +63,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@colaborate/adapter-memory": "workspace:*"
+    "@colaborate/adapter-memory": "workspace:*",
+    "@types/node": "^25.5.0"
   }
 }

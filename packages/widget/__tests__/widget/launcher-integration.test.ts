@@ -22,18 +22,20 @@ const mockAttachScreenshot = vi.fn().mockResolvedValue({
 });
 
 vi.mock(new URL("../../src/api-client.js", import.meta.url).pathname, () => ({
-  ApiClient: vi.fn().mockImplementation(() => ({
-    sendFeedback: mockSendFeedback,
-    getFeedbacks: mockGetFeedbacks,
-    resolveFeedback: vi.fn(),
-    deleteFeedback: vi.fn(),
-    deleteAllFeedbacks: vi.fn(),
-    createSession: vi.fn(),
-    submitSession: vi.fn(),
-    getSession: vi.fn().mockResolvedValue(null),
-    listSessions: vi.fn().mockResolvedValue([]),
-    attachScreenshot: mockAttachScreenshot,
-  })),
+  ApiClient: vi.fn().mockImplementation(function () {
+    return {
+      sendFeedback: mockSendFeedback,
+      getFeedbacks: mockGetFeedbacks,
+      resolveFeedback: vi.fn(),
+      deleteFeedback: vi.fn(),
+      deleteAllFeedbacks: vi.fn(),
+      createSession: vi.fn(),
+      submitSession: vi.fn(),
+      getSession: vi.fn().mockResolvedValue(null),
+      listSessions: vi.fn().mockResolvedValue([]),
+      attachScreenshot: mockAttachScreenshot,
+    };
+  }),
   flushRetryQueue: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -49,44 +51,47 @@ vi.mock(new URL("../../src/screenshot.js", import.meta.url).pathname, () => ({
 let capturedBus: { emit: (event: string, ...args: unknown[]) => void } | null = null;
 
 vi.mock(new URL("../../src/annotator.js", import.meta.url).pathname, () => ({
-  Annotator: vi.fn().mockImplementation(
-    (
-      _colors: unknown,
-      bus: {
-        emit: (event: string, ...args: unknown[]) => void;
-        on: (event: string, listener: (...args: unknown[]) => void) => () => void;
-      },
-    ) => {
-      capturedBus = bus;
-      // Wire annotation:start listener like the real Annotator constructor does
-      bus.on("annotation:start", () => {});
-      return {
-        destroy: vi.fn(),
-        setSessionMode: vi.fn(),
-      };
+  Annotator: vi.fn().mockImplementation(function (
+    this: unknown,
+    _colors: unknown,
+    bus: {
+      emit: (event: string, ...args: unknown[]) => void;
+      on: (event: string, listener: (...args: unknown[]) => void) => () => void;
     },
-  ),
+  ) {
+    capturedBus = bus;
+    // Wire annotation:start listener like the real Annotator constructor does
+    bus.on("annotation:start", () => {});
+    return {
+      destroy: vi.fn(),
+      setSessionMode: vi.fn(),
+    };
+  }),
 }));
 
 vi.mock(new URL("../../src/markers.js", import.meta.url).pathname, () => ({
-  MarkerManager: vi.fn().mockImplementation(() => ({
-    render: vi.fn(),
-    highlight: vi.fn(),
-    pinHighlight: vi.fn(),
-    addFeedback: vi.fn(),
-    destroy: vi.fn(),
-    count: 0,
-  })),
+  MarkerManager: vi.fn().mockImplementation(function () {
+    return {
+      render: vi.fn(),
+      highlight: vi.fn(),
+      pinHighlight: vi.fn(),
+      addFeedback: vi.fn(),
+      destroy: vi.fn(),
+      count: 0,
+    };
+  }),
 }));
 
 vi.mock(new URL("../../src/tooltip.js", import.meta.url).pathname, () => ({
-  Tooltip: vi.fn().mockImplementation(() => ({
-    tooltipId: "sp-tooltip",
-    show: vi.fn(),
-    scheduleHide: vi.fn(),
-    contains: vi.fn(),
-    destroy: vi.fn(),
-  })),
+  Tooltip: vi.fn().mockImplementation(function () {
+    return {
+      tooltipId: "sp-tooltip",
+      show: vi.fn(),
+      scheduleHide: vi.fn(),
+      contains: vi.fn(),
+      destroy: vi.fn(),
+    };
+  }),
 }));
 
 vi.mock(new URL("../../src/styles/base.js", import.meta.url).pathname, () => ({

@@ -352,8 +352,8 @@ void (0 as unknown as _AssertScreenshotAttachReverse);
  * Safe: does not leak input values or schema structure.
  */
 export function formatValidationErrors(error: zod.z.ZodError): Array<{ field: string; message: string }> {
-  return error.issues.map((issue: { path: Array<string | number>; message: string }) => ({
-    field: issue.path.join("."),
+  return error.issues.map((issue) => ({
+    field: issue.path.map((p) => String(p)).join("."),
     message: issue.message,
   }));
 }
