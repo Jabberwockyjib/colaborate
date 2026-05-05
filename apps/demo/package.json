@@ -10,7 +10,7 @@
     "clean": "rm -rf .next"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.91.1",
+    "@anthropic-ai/sdk": "^0.93.0",
     "@colaborate/adapter-memory": "workspace:*",
     "@colaborate/adapter-prisma": "workspace:*",
     "@colaborate/integration-github": "workspace:*",
